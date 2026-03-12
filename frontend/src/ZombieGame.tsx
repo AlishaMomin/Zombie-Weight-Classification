@@ -222,6 +222,7 @@ type GameCanvasProps = {
   playerName: string;
   avatar: AvatarId;
   onOpenLeaderboard: () => void;
+  onSelectAvatar: (id: AvatarId) => void;
 };
 
 function GameCanvas({
@@ -230,7 +231,8 @@ function GameCanvas({
   onEvent,
   playerName,
   avatar,
-  onOpenLeaderboard
+  onOpenLeaderboard,
+  onSelectAvatar
 }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -238,6 +240,72 @@ function GameCanvas({
   const animRef = useRef<number | null>(null);
   const phaseRef = useRef<"idle" | "running" | "done">("idle");
   const [showHint, setShowHint] = useState(false);
+
+  const drawRobotVariant = useCallback(
+    (ctx: CanvasRenderingContext2D, x: number, y: number) => {
+      ctx.save();
+      ctx.translate(x, y);
+      if (avatar === "defence") {
+        // Defence bot style (yellow, chunky)
+        ctx.fillStyle = "#f5d040";
+        ctx.strokeStyle = "#b08000";
+        ctx.lineWidth = 1.5;
+        ctx.fillRect(-14, -26, 28, 24);
+        ctx.strokeRect(-14, -26, 28, 24);
+        ctx.fillStyle = "#f0c030";
+        ctx.fillRect(-18, -32, 8, 8);
+        ctx.fillRect(10, -32, 8, 8);
+        ctx.fillStyle = "#b08000";
+        ctx.fillRect(-10, -20, 8, 6);
+        ctx.fillRect(2, -20, 8, 6);
+        ctx.fillStyle = "#8a6000";
+        ctx.fillRect(-10, -6, 20, 4);
+        ctx.fillStyle = "#f0c030";
+        ctx.fillRect(-12, -2, 8, 18);
+        ctx.fillRect(4, -2, 8, 18);
+      } else if (avatar === "patrol") {
+        // Patrol bot style (grey base with wheels)
+        ctx.fillStyle = "#d0eaf8";
+        ctx.strokeStyle = "#4a9ab5";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(0, -36, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#ddf0fa";
+        ctx.fillRect(-14, -30, 28, 22);
+        ctx.strokeRect(-14, -30, 28, 22);
+        ctx.fillStyle = "#22aadd";
+        ctx.beginPath();
+        ctx.arc(-6, -22, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(6, -22, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(-6, -22, 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(6, -22, 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#4a9ab5";
+        ctx.fillRect(-8, -15, 16, 3);
+        ctx.fillStyle = "#666";
+        ctx.beginPath();
+        ctx.arc(-8, -4, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(8, -4, 6, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // Scout/default bot uses base robot style at this position
+        drawRobot(ctx, 0, 0);
+      }
+      ctx.restore();
+    },
+    [avatar]
+  );
 
   const spawnChars = useCallback(() => {
     const el = containerRef.current;
@@ -472,10 +540,62 @@ function GameCanvas({
       if (!ctx) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawBg(ctx, canvas.width, canvas.height);
+      const t = performance.now() / 600;
       charsRef.current.forEach((c) => {
-        if (c.type === "z") drawZombie(ctx, c.x, c.y, c.state, c.flash);
-        else if (c.type === "h") drawHuman(ctx, c.x, c.y, c.state);
-        else drawRobot(ctx, c.x, c.y);
+        if (c.type === "z") {
+          drawZombie(ctx, c.x, c.y, c.state, c.flash);
+        } else if (c.type === "h") {
+          drawHuman(ctx, c.x, c.y, c.state);
+        } else {
+          // draw active bot body
+          drawRobotVariant(ctx, c.x, c.y);
+          // Extra flair based on selected bot
+          if (avatar === "defence") {
+            // Shield on the zombie side (left) that gently pulses
+            const pulse = 0.8 + 0.2 * Math.sin(t * 2);
+            ctx.save();
+            ctx.translate(c.x - 26, c.y - 10);
+            ctx.scale(pulse, pulse);
+            ctx.fillStyle = "rgba(120,200,255,0.25)";
+            ctx.beginPath();
+            ctx.arc(0, 10, 24, Math.PI / 2, (3 * Math.PI) / 2);
+            ctx.lineTo(0, 34);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = "#55bbee";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 10, 24, Math.PI / 2, (3 * Math.PI) / 2);
+            ctx.stroke();
+            ctx.restore();
+          } else if (avatar === "patrol") {
+            // Blaster aiming toward zombies (left) with a moving beam
+            ctx.save();
+            ctx.translate(c.x - 12, c.y - 16);
+            ctx.fillStyle = "#ffdd55";
+            ctx.fillRect(-14, -3, 14, 6);
+            const beamOffset = (t % 1) * 40;
+            ctx.fillStyle = "rgba(255,80,80,0.7)";
+            ctx.fillRect(-32, -1, 18, 2);
+            ctx.fillStyle = "rgba(255,160,160,0.8)";
+            ctx.beginPath();
+            ctx.arc(-14 - beamOffset, -0.5, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          } else if (avatar === "scout") {
+            // Rotating radar line above the bot
+            ctx.save();
+            ctx.translate(c.x, c.y - 46);
+            ctx.strokeStyle = "#66ffcc";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            const angle = t * 2;
+            ctx.moveTo(0, 0);
+            ctx.lineTo(26 * Math.cos(angle), 26 * Math.sin(angle));
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
         if (c.state !== "alive" && c.type !== "r") {
           drawIcon(ctx, c.x, c.y, c.state);
         }
@@ -488,7 +608,7 @@ function GameCanvas({
         window.cancelAnimationFrame(animRef.current);
       }
     };
-  }, []);
+  }, [avatar, drawBg, drawHuman, drawZombie, drawRobotVariant]);
 
   const handleEliminate = () => {
     if (phaseRef.current !== "idle") return;
@@ -865,9 +985,48 @@ function GameCanvas({
           marginTop: 18
         }}
       >
-        <BotItem Bot={ScoutBot} label="Scout bot" />
-        <BotItem Bot={DefenceBot} label="Defence bot" />
-        <BotItem Bot={PatrolBot} label="Patrol bot" />
+        <button
+          type="button"
+          onClick={() => onSelectAvatar("scout")}
+          style={{
+            background: "transparent",
+            border: "none",
+            padding: 0,
+            cursor: "pointer",
+            opacity: avatar === "scout" ? 1 : 0.6,
+            transform: avatar === "scout" ? "scale(1.05)" : "scale(1)"
+          }}
+        >
+          <BotItem Bot={ScoutBot} label="Scout bot" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onSelectAvatar("defence")}
+          style={{
+            background: "transparent",
+            border: "none",
+            padding: 0,
+            cursor: "pointer",
+            opacity: avatar === "defence" ? 1 : 0.6,
+            transform: avatar === "defence" ? "scale(1.05)" : "scale(1)"
+          }}
+        >
+          <BotItem Bot={DefenceBot} label="Defence bot" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onSelectAvatar("patrol")}
+          style={{
+            background: "transparent",
+            border: "none",
+            padding: 0,
+            cursor: "pointer",
+            opacity: avatar === "patrol" ? 1 : 0.6,
+            transform: avatar === "patrol" ? "scale(1.05)" : "scale(1)"
+          }}
+        >
+          <BotItem Bot={PatrolBot} label="Patrol bot" />
+        </button>
       </div>
     </div>
   );
@@ -1770,6 +1929,7 @@ const ZombieGame: React.FC = () => {
           playerName={name}
           avatar={avatar || "scout"}
           onOpenLeaderboard={() => setShowLeaderboardOverlay(true)}
+          onSelectAvatar={(id) => setAvatar(id)}
         />
         {showLeaderboardOverlay && (
           <div
