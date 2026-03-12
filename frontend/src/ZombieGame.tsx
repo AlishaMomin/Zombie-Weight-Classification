@@ -223,6 +223,7 @@ type GameCanvasProps = {
   avatar: AvatarId;
   onOpenLeaderboard: () => void;
   onSelectAvatar: (id: AvatarId) => void;
+  timerMs: number;
 };
 
 function GameCanvas({
@@ -232,7 +233,8 @@ function GameCanvas({
   playerName,
   avatar,
   onOpenLeaderboard,
-  onSelectAvatar
+  onSelectAvatar,
+  timerMs
 }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -673,13 +675,26 @@ function GameCanvas({
       ? "🚁"
       : "🛠️";
 
+  const safeMs = Math.max(0, timerMs);
+  const totalSeconds = Math.floor(safeMs / 1000);
+  const msPart = Math.floor(safeMs % 1000);
+  const secondsPart = totalSeconds % 60;
+  const minutesPart = Math.floor(totalSeconds / 60) % 60;
+  const hoursPart = Math.floor(totalSeconds / 3600);
+  const pad2 = (n: number) => n.toString().padStart(2, "0");
+  const pad3 = (n: number) => n.toString().padStart(3, "0");
+  const timerText = `${pad2(hoursPart)}:${pad2(minutesPart)}:${pad2(
+    secondsPart
+  )}:${pad3(msPart)}`;
+
   return (
     <div
       style={{
         background: "#000",
         display: "flex",
         flexDirection: "column",
-        fontFamily: "'Courier New', monospace"
+        fontFamily: "'Courier New', monospace",
+        position: "relative"
       }}
     >
       <div
@@ -698,11 +713,19 @@ function GameCanvas({
             style={{
               color: "#ff3333",
               fontWeight: "bold",
-              fontSize: 12,
+              fontSize: 16,
               letterSpacing: 2
             }}
           >
-            🧟 ROUND {round + 1}/3 — {rd.name.toUpperCase()}
+            🧟 ROUND {round + 1}/3 — {rd.name.toUpperCase()}{" "}
+            <span
+              style={{
+                color: "#ffdd77",
+                fontSize: 14
+              }}
+            >
+              ({rd.difficulty.toUpperCase()})
+            </span>
           </div>
         </div>
 
@@ -710,7 +733,7 @@ function GameCanvas({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 8,
+            gap: 10,
             flex: 1,
             justifyContent: "center",
             maxWidth: 260
@@ -718,15 +741,15 @@ function GameCanvas({
         >
           <div
             style={{
-              width: 28,
-              height: 28,
+              width: 34,
+              height: 34,
               borderRadius: "50%",
               background: "#1a1a1a",
-              border: "1px solid #333",
+              border: "1px solid #444",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 16
+              fontSize: 22
             }}
           >
             {avatarEmoji}
@@ -736,13 +759,15 @@ function GameCanvas({
               display: "flex",
               flexDirection: "column",
               maxWidth: 210,
-              overflow: "hidden"
+              overflow: "hidden",
+              alignItems: "center",
+              textAlign: "center"
             }}
           >
             <span
               style={{
                 color: "#eee",
-                fontSize: 11,
+                fontSize: 15,
                 fontWeight: "bold",
                 whiteSpace: "nowrap",
                 textOverflow: "ellipsis",
@@ -753,8 +778,8 @@ function GameCanvas({
             </span>
             <span
               style={{
-                color: "#666",
-                fontSize: 10
+                color: "#aaaaaa",
+                fontSize: 13
               }}
             >
               Player
@@ -774,7 +799,7 @@ function GameCanvas({
             type="button"
             onClick={onOpenLeaderboard}
             style={{
-              fontSize: 10,
+              fontSize: 13,
               color: "#ffdd77",
               display: "flex",
               alignItems: "center",
@@ -788,17 +813,7 @@ function GameCanvas({
             <span>🏆</span>
             <span style={{ textDecoration: "underline" }}>Leaderboard</span>
           </button>
-          <div
-            style={{
-              fontSize: 10,
-              padding: "3px 10px",
-              borderRadius: 20,
-              background: rd.color,
-              color: rd.textColor
-            }}
-          >
-            {rd.difficulty}
-          </div>
+          {/* difficulty now shown inline next to round title */}
         </div>
       </div>
 
@@ -837,7 +852,7 @@ function GameCanvas({
           <div
             style={{
               color: "#ff9900",
-              fontSize: 10,
+              fontSize: 12,
               letterSpacing: 2,
               fontWeight: "bold"
             }}
@@ -860,8 +875,8 @@ function GameCanvas({
               >
                 <span
                   style={{
-                    color: "#ddd",
-                    fontSize: 13,
+                    color: "#fff",
+                    fontSize: 15,
                     fontWeight: "bold",
                     whiteSpace: "pre-line",
                     lineHeight: 1.2
@@ -871,11 +886,11 @@ function GameCanvas({
                 </span>
                 <span
                   style={{
-                    color: "#ff9900",
-                    fontSize: 13,
+                    color: "#ffcc66",
+                    fontSize: 15,
                     fontWeight: "bold",
                     background: "#120f00",
-                    padding: "2px 8px",
+                    padding: "2px 10px",
                     borderRadius: 4
                   }}
                 >
@@ -907,8 +922,8 @@ function GameCanvas({
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
-                  fontSize: 9,
-                  color: "#888",
+                  fontSize: 10,
+                  color: "#aaa",
                   marginTop: 2
                 }}
               >
@@ -925,7 +940,7 @@ function GameCanvas({
                 border: "1px solid #4a3800",
                 borderRadius: 8,
                 padding: "6px 8px",
-                fontSize: 10,
+                fontSize: 12,
                 lineHeight: 1.4,
                 color: "#ffbb55",
                 marginTop: 2
@@ -933,7 +948,7 @@ function GameCanvas({
             >
               <div
                 style={{
-                  fontSize: 9,
+                  fontSize: 12,
                   letterSpacing: 1,
                   color: "#ff9900",
                   marginBottom: 4
@@ -982,7 +997,10 @@ function GameCanvas({
           alignItems: "center",
           justifyContent: "center",
           gap: 60,
-          marginTop: 18
+          marginTop: 12,
+          position: "relative",
+          padding: "0 18px",
+          boxSizing: "border-box"
         }}
       >
         <button
@@ -1027,6 +1045,26 @@ function GameCanvas({
         >
           <BotItem Bot={PatrolBot} label="Patrol bot" />
         </button>
+
+        {/* Bottom-right round timer (aligned with bot bar) */}
+        <div
+          style={{
+            position: "absolute",
+            right: 18,
+            bottom: 10,
+            padding: "4px 10px",
+            borderRadius: 12,
+            background: "rgba(0,0,0,0.7)",
+            border: "1px solid #222",
+            fontSize: 18,
+            color: "#ccc",
+            textAlign: "right",
+            lineHeight: 1.3
+          }}
+        >
+          <div style={{ fontSize: 18, letterSpacing: 1 }}>TIME:</div>
+          <div>{timerText}</div>
+        </div>
       </div>
     </div>
   );
@@ -1051,8 +1089,8 @@ function BotItem({ Bot, label }: BotItemProps) {
       <Bot />
       <div
         style={{
-          color: "#555",
-          fontSize: 10,
+          color: "#ccc",
+          fontSize: 15,
           fontFamily: "'Courier New', monospace"
         }}
       >
@@ -1325,8 +1363,11 @@ const ZombieGame: React.FC = () => {
     null
   );
   const [roundScores, setRoundScores] = useState<EliminationResult[]>([]);
+  const roundGameStartRef = useRef<number | null>(null);
+  const [roundGameDurations, setRoundGameDurations] = useState<number[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [showLeaderboardOverlay, setShowLeaderboardOverlay] = useState(false);
+  const [gameTimerMs, setGameTimerMs] = useState(0);
 
   useEffect(() => {
     loadLB().then(setLeaderboard);
@@ -1369,6 +1410,24 @@ const ZombieGame: React.FC = () => {
     }
   };
 
+  // Tick timer while on main game screen
+  useEffect(() => {
+    if (screen !== "game") {
+      setGameTimerMs(0);
+      return;
+    }
+    // start if not already started
+    if (roundGameStartRef.current === null) {
+      roundGameStartRef.current = performance.now();
+    }
+    const id = window.setInterval(() => {
+      if (roundGameStartRef.current !== null) {
+        setGameTimerMs(performance.now() - roundGameStartRef.current);
+      }
+    }, 200);
+    return () => window.clearInterval(id);
+  }, [screen, round]);
+
   const handleGameEvent = (evt: GameEvent) => {
     if ("weightChange" in evt) {
       setWeights((w) => ({
@@ -1376,6 +1435,17 @@ const ZombieGame: React.FC = () => {
         [evt.weightChange.key]: evt.weightChange.val
       }));
       return;
+    }
+    // Stop main-game timer for this round
+    if (roundGameStartRef.current !== null) {
+      const dur = performance.now() - roundGameStartRef.current;
+      setRoundGameDurations((prev) => {
+        const next = [...prev];
+        next[round] = dur;
+        return next;
+      });
+      roundGameStartRef.current = null;
+      setGameTimerMs(dur);
     }
     setRoundResult(evt);
     setScreen("roundResult");
@@ -1930,6 +2000,7 @@ const ZombieGame: React.FC = () => {
           avatar={avatar || "scout"}
           onOpenLeaderboard={() => setShowLeaderboardOverlay(true)}
           onSelectAvatar={(id) => setAvatar(id)}
+          timerMs={gameTimerMs}
         />
         {showLeaderboardOverlay && (
           <div
