@@ -22,6 +22,13 @@ type NarrLine = { sp: "Commander" | "AI System"; tx: string };
 type NarrBlock = { lines: NarrLine[] };
 
 type CanvasState = "alive" | "eliminated" | "wrongly-hit" | "saved";
+type AvatarId =
+  | "scout"
+  | "defence"
+  | "patrol"
+  | "medic"
+  | "drone"
+  | "engineer";
 
 type CanvasChar = {
   id?: number;
@@ -212,14 +219,25 @@ type GameCanvasProps = {
   round: number;
   weights: Weights;
   onEvent: (evt: GameEvent) => void;
+  playerName: string;
+  avatar: AvatarId;
+  onOpenLeaderboard: () => void;
 };
 
-function GameCanvas({ round, weights, onEvent }: GameCanvasProps) {
+function GameCanvas({
+  round,
+  weights,
+  onEvent,
+  playerName,
+  avatar,
+  onOpenLeaderboard
+}: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const charsRef = useRef<CanvasChar[]>([]);
   const animRef = useRef<number | null>(null);
   const phaseRef = useRef<"idle" | "running" | "done">("idle");
+  const [showHint, setShowHint] = useState(false);
 
   const spawnChars = useCallback(() => {
     const el = containerRef.current;
@@ -521,24 +539,19 @@ function GameCanvas({ round, weights, onEvent }: GameCanvasProps) {
     }, 280);
   };
 
-  const predAcc = () => {
-    const rd = ROUNDS_DATA[round];
-    const max = weights.s + weights.w + weights.b || 1;
-    let correct = 0;
-    rd.chars.forEach((c) => {
-      const raw =
-        (c.f.s || 0) * weights.s +
-        (c.f.w || 0) * weights.w +
-        (c.f.b || 0) * weights.b;
-      const pred = (raw / max) * 10 >= 5 ? "z" : "h";
-      if (pred === c.t) correct += 1;
-    });
-    return Math.round((correct / rd.chars.length) * 100);
-  };
-
-  const acc = predAcc();
-  const accCol = acc >= 80 ? "#4a8" : acc >= 60 ? "#fa0" : "#e44";
   const rd = ROUNDS_DATA[round];
+  const avatarEmoji =
+    avatar === "scout"
+      ? "🤖"
+      : avatar === "defence"
+      ? "🛡️"
+      : avatar === "patrol"
+      ? "🛰️"
+      : avatar === "medic"
+      ? "⚕️"
+      : avatar === "drone"
+      ? "🚁"
+      : "🛠️";
 
   return (
     <div
@@ -556,33 +569,120 @@ function GameCanvas({ round, weights, onEvent }: GameCanvasProps) {
           padding: "8px 16px",
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between"
+          justifyContent: "space-between",
+          gap: 12
         }}
       >
-        <div
-          style={{
-            color: "#ff3333",
-            fontWeight: "bold",
-            fontSize: 12,
-            letterSpacing: 2
-          }}
-        >
-          🧟 ROUND {round + 1}/3 — {rd.name.toUpperCase()}
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <div
+            style={{
+              color: "#ff3333",
+              fontWeight: "bold",
+              fontSize: 12,
+              letterSpacing: 2
+            }}
+          >
+            🧟 ROUND {round + 1}/3 — {rd.name.toUpperCase()}
+          </div>
         </div>
+
         <div
           style={{
-            fontSize: 10,
-            padding: "3px 10px",
-            borderRadius: 20,
-            background: rd.color,
-            color: rd.textColor
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flex: 1,
+            justifyContent: "center",
+            maxWidth: 260
           }}
         >
-          {rd.difficulty}
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: "50%",
+              background: "#1a1a1a",
+              border: "1px solid #333",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 16
+            }}
+          >
+            {avatarEmoji}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              maxWidth: 210,
+              overflow: "hidden"
+            }}
+          >
+            <span
+              style={{
+                color: "#eee",
+                fontSize: 11,
+                fontWeight: "bold",
+                whiteSpace: "nowrap",
+                textOverflow: "ellipsis",
+                overflow: "hidden"
+              }}
+            >
+              {playerName || "Cadet"}
+            </span>
+            <span
+              style={{
+                color: "#666",
+                fontSize: 10
+              }}
+            >
+              Player
+            </span>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            gap: 2
+          }}
+        >
+          <button
+            type="button"
+            onClick={onOpenLeaderboard}
+            style={{
+              fontSize: 10,
+              color: "#ffdd77",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              background: "transparent",
+              border: "none",
+              padding: 0,
+              cursor: "pointer"
+            }}
+          >
+            <span>🏆</span>
+            <span style={{ textDecoration: "underline" }}>Leaderboard</span>
+          </button>
+          <div
+            style={{
+              fontSize: 10,
+              padding: "3px 10px",
+              borderRadius: 20,
+              background: rd.color,
+              color: rd.textColor
+            }}
+          >
+            {rd.difficulty}
+          </div>
         </div>
       </div>
 
-      <div style={{ display: "flex", height: 420 }}>
+      <div style={{ display: "flex", height: 500 }}>
         <div
           ref={containerRef}
           style={{
@@ -668,14 +768,15 @@ function GameCanvas({ round, weights, onEvent }: GameCanvasProps) {
                 max={10}
                 step={1}
                 value={weights[f.id]}
-                onChange={(e) =>
+                onChange={(e) => {
+                  setShowHint(true);
                   onEvent({
                     weightChange: {
                       key: f.id,
                       val: Number(e.target.value)
                     }
-                  })
-                }
+                  });
+                }}
                 style={{
                   width: "100%",
                   accentColor: "#e33",
@@ -687,7 +788,7 @@ function GameCanvas({ round, weights, onEvent }: GameCanvasProps) {
                   display: "flex",
                   justifyContent: "space-between",
                   fontSize: 9,
-                  color: "#333",
+                  color: "#888",
                   marginTop: 2
                 }}
               >
@@ -697,55 +798,39 @@ function GameCanvas({ round, weights, onEvent }: GameCanvasProps) {
             </div>
           ))}
 
-          <div
-            style={{
-              background: "#0a0a0a",
-              borderRadius: 8,
-              padding: 10,
-              border: "1px solid #1e1e1e",
-              marginTop: 4
-            }}
-          >
+          {showHint && (
             <div
               style={{
-                color: "#555",
+                background: "#1a1200",
+                border: "1px solid #4a3800",
+                borderRadius: 8,
+                padding: "6px 8px",
                 fontSize: 10,
-                letterSpacing: 1,
-                marginBottom: 6
-              }}
-            >
-              PREDICTED ACCURACY
-            </div>
-            <div
-              style={{
-                background: "#1a1a1a",
-                borderRadius: 4,
-                height: 6,
-                overflow: "hidden"
+                lineHeight: 1.4,
+                color: "#ffbb55",
+                marginTop: 2
               }}
             >
               <div
                 style={{
-                  height: "100%",
-                  width: `${acc}%`,
-                  background: accCol,
-                  transition: "width .3s",
-                  borderRadius: 4
+                  fontSize: 9,
+                  letterSpacing: 1,
+                  color: "#ff9900",
+                  marginBottom: 4
                 }}
-              />
+              >
+                WEIGHT HINT
+              </div>
+              <div>
+                {round === 0 &&
+                  "Round 1: Try moving one slider at a time and watch how the mix of zombies and humans changes."}
+                {round === 1 &&
+                  "Round 2: Some humans now share zombie-looking clues. What happens if you turn one clue up too high?"}
+                {round === 2 &&
+                  "Round 3: The data is messy. Sometimes turning a feature down can be just as powerful as turning it up."}
+              </div>
             </div>
-            <div
-              style={{
-                color: accCol,
-                fontSize: 13,
-                fontWeight: "bold",
-                marginTop: 5,
-                textAlign: "right"
-              }}
-            >
-              {acc}%
-            </div>
-          </div>
+          )}
 
           <button
             onClick={handleEliminate}
@@ -1025,6 +1110,11 @@ type TypewriterProps = {
 function Typewriter({ text, onDone }: TypewriterProps) {
   const [displayed, setDisplayed] = useState("");
   const [done, setDone] = useState(false);
+  const onDoneRef = useRef(onDone);
+
+  useEffect(() => {
+    onDoneRef.current = onDone;
+  }, [onDone]);
 
   useEffect(() => {
     setDisplayed("");
@@ -1036,11 +1126,13 @@ function Typewriter({ text, onDone }: TypewriterProps) {
       if (i >= text.length) {
         window.clearInterval(iv);
         setDone(true);
-        if (onDone) onDone();
+        if (onDoneRef.current) {
+          onDoneRef.current();
+        }
       }
     }, 26);
     return () => window.clearInterval(iv);
-  }, [text, onDone]);
+  }, [text]);
 
   return (
     <span>
@@ -1064,6 +1156,8 @@ const ZombieGame: React.FC = () => {
   const [name, setName] = useState("");
   const [age, setAge] = useState("");
   const [nameErr, setNameErr] = useState("");
+  const [avatar, setAvatar] = useState<AvatarId | null>(null);
+  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [round, setRound] = useState(0);
   const [narrLine, setNarrLine] = useState(0);
   const [narrDone, setNarrDone] = useState(false);
@@ -1073,12 +1167,17 @@ const ZombieGame: React.FC = () => {
   );
   const [roundScores, setRoundScores] = useState<EliminationResult[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [showLeaderboardOverlay, setShowLeaderboardOverlay] = useState(false);
 
   useEffect(() => {
     loadLB().then(setLeaderboard);
   }, []);
 
   const handleStart = () => {
+    if (!avatar) {
+      setNameErr("Please choose your bot avatar!");
+      return;
+    }
     if (!name.trim()) {
       setNameErr("Please enter your name!");
       return;
@@ -1170,7 +1269,7 @@ const ZombieGame: React.FC = () => {
   const S: React.CSSProperties = {
     fontFamily: "'Courier New', monospace",
     background: "#0a0a0a",
-    minHeight: 520
+    minHeight: 620
   };
 
   // INTRO
@@ -1230,7 +1329,130 @@ const ZombieGame: React.FC = () => {
           >
             Train an AI to detect zombies using{" "}
             <span style={{ color: "#ff9900" }}>weighted classification</span>.
-            3 rounds. Real ML concepts.
+            3 rounds.
+          </div>
+          <div
+            style={{
+              marginBottom: 16,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center"
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setShowAvatarPicker((v) => !v)}
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: "50%",
+                border: "2px solid #555",
+                background: "#111",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 28,
+                cursor: "pointer",
+                marginBottom: 6
+              }}
+            >
+              {avatar
+                ? (avatar === "scout"
+                    ? "🤖"
+                    : avatar === "defence"
+                    ? "🛡️"
+                    : avatar === "patrol"
+                    ? "🛰️"
+                    : avatar === "medic"
+                    ? "⚕️"
+                    : avatar === "drone"
+                    ? "🚁"
+                    : "🛠️")
+                : "?"}
+            </button>
+            <div
+              style={{
+                color: "#eee",
+                fontSize: 11,
+                fontWeight: "bold",
+                marginBottom: 2
+              }}
+            >
+              {avatar === "scout"
+                ? "Scout Bot"
+                : avatar === "defence"
+                ? "Defence Bot"
+                : avatar === "patrol"
+                ? "Patrol Bot"
+                : avatar === "medic"
+                ? "Medic Bot"
+                : avatar === "drone"
+                ? "Recon Drone"
+                : avatar === "engineer"
+                ? "Engineer Bot"
+                : "Tap to choose your bot"}
+            </div>
+            <div style={{ color: "#777", fontSize: 10 }}>
+              Avatar
+            </div>
+            {showAvatarPicker && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: 8,
+                  borderRadius: 8,
+                  border: "1px solid #222",
+                  background: "#151515",
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3, 1fr)",
+                  gap: 6
+                }}
+              >
+                {[
+                  { id: "scout" as AvatarId, label: "Scout", emoji: "🤖" },
+                  { id: "defence" as AvatarId, label: "Defence", emoji: "🛡️" },
+                  { id: "patrol" as AvatarId, label: "Patrol", emoji: "🛰️" },
+                  { id: "medic" as AvatarId, label: "Medic", emoji: "⚕️" },
+                  { id: "drone" as AvatarId, label: "Drone", emoji: "🚁" },
+                  { id: "engineer" as AvatarId, label: "Engineer", emoji: "🛠️" }
+                ].map((opt) => {
+                  const isSelected = avatar === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => {
+                        setAvatar(opt.id);
+                        setShowAvatarPicker(false);
+                      }}
+                      style={{
+                        padding: "6px 4px",
+                        borderRadius: 6,
+                        border: isSelected
+                          ? "1px solid #ff9900"
+                          : "1px solid #333",
+                        background: isSelected ? "#261400" : "#181818",
+                        cursor: "pointer",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 2
+                      }}
+                    >
+                      <div style={{ fontSize: 18 }}>{opt.emoji}</div>
+                      <div
+                        style={{
+                          fontSize: 9,
+                          color: isSelected ? "#ffdd88" : "#777"
+                        }}
+                      >
+                        {opt.label}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <div style={{ marginBottom: 14 }}>
             <div
@@ -1296,6 +1518,7 @@ const ZombieGame: React.FC = () => {
               }}
             />
           </div>
+          {/* old inline avatar row removed */}
           {nameErr && (
             <div
               style={{
@@ -1540,7 +1763,193 @@ const ZombieGame: React.FC = () => {
     return (
       <div style={S}>
         <style>{`@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}`}</style>
-        <GameCanvas round={round} weights={weights} onEvent={handleGameEvent} />
+        <GameCanvas
+          round={round}
+          weights={weights}
+          onEvent={handleGameEvent}
+          playerName={name}
+          avatar={avatar || "scout"}
+          onOpenLeaderboard={() => setShowLeaderboardOverlay(true)}
+        />
+        {showLeaderboardOverlay && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.7)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 50
+            }}
+          >
+            <div
+              style={{
+                background: "#111",
+                borderRadius: 12,
+                border: "1px solid #333",
+                padding: "18px 20px",
+                width: "100%",
+                maxWidth: 420,
+                fontFamily: "'Courier New', monospace"
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 10
+                }}
+              >
+                <div
+                  style={{
+                    color: "#ff9900",
+                    fontSize: 13,
+                    fontWeight: "bold",
+                    letterSpacing: 2
+                  }}
+                >
+                  🏆 LEADERBOARD
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowLeaderboardOverlay(false)}
+                  style={{
+                    background: "transparent",
+                    border: "1px solid #444",
+                    borderRadius: 999,
+                    color: "#aaa",
+                    fontSize: 11,
+                    padding: "4px 10px",
+                    cursor: "pointer"
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+
+              {roundScores.length > 0 && (
+                <div
+                  style={{
+                    background: "#181818",
+                    borderRadius: 8,
+                    padding: "10px 12px",
+                    border: "1px solid #333",
+                    marginBottom: 12
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#888",
+                      fontSize: 11,
+                      marginBottom: 4
+                    }}
+                  >
+                    Your totals so far
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontSize: 12,
+                      color: "#ddd"
+                    }}
+                  >
+                    <span>
+                      Score:{" "}
+                      {roundScores.reduce((s, r) => s + r.score, 0)} pts
+                    </span>
+                    <span>
+                      Avg acc:{" "}
+                      {Math.round(
+                        roundScores.reduce((s, r) => s + r.acc, 0) /
+                          roundScores.length
+                      )}
+                      %
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div
+                style={{
+                  color: "#666",
+                  fontSize: 10,
+                  letterSpacing: 2,
+                  marginBottom: 6
+                }}
+              >
+                TOP SCORES
+              </div>
+              {leaderboard.length === 0 ? (
+                <div
+                  style={{
+                    color: "#444",
+                    fontSize: 12,
+                    textAlign: "center",
+                    padding: 16
+                  }}
+                >
+                  No entries yet. Finish all 3 rounds to record a score.
+                </div>
+              ) : (
+                leaderboard.slice(0, 5).map((e, i) => {
+                  const isMe = e.name === name;
+                  const medal =
+                    i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`;
+                  return (
+                    <div
+                      key={e.name + i}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        background: isMe ? "#181000" : "#151515",
+                        borderRadius: 8,
+                        padding: "6px 10px",
+                        marginBottom: 4,
+                        border: isMe
+                          ? "1px solid #ff990055"
+                          : "1px solid #222",
+                        gap: 8
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 26,
+                          textAlign: "center",
+                          fontSize: 14,
+                          color: "#777"
+                        }}
+                      >
+                        {medal}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div
+                          style={{
+                            color: isMe ? "#ffdd88" : "#ddd",
+                            fontSize: 12
+                          }}
+                        >
+                          {e.name}
+                          {isMe ? " (you)" : ""}
+                        </div>
+                        <div
+                          style={{
+                            color: "#666",
+                            fontSize: 10
+                          }}
+                        >
+                          {e.score} pts • {e.acc}% • Age {e.age}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
