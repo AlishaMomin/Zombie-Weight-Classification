@@ -1,25 +1,121 @@
 from __future__ import annotations
 
-import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
+import psycopg2
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from psycopg2.extras import Json
 
-from firebase_client import get_db
+from db import DatabaseConfigError, get_db
+
+
+def _now_utc() -> datetime:
+  return datetime.now(timezone.utc)
 
 
 def _now_utc_iso() -> str:
-  return datetime.now(timezone.utc).isoformat()
+  return _now_utc().isoformat()
 
+
+def _serialize(value: Any) -> Any:
+  if isinstance(value, datetime):
+    return value.isoformat()
+  if isinstance(value, dict):
+    return {k: _serialize(v) for k, v in value.items()}
+  if isinstance(value, list):
+    return [_serialize(v) for v in value]
+  return value
+
+
+VALID_AVATARS = {"scout", "defence", "patrol", "medic", "drone", "engineer"}
+VALID_DIFFICULTIES = {"Easy", "Medium", "Hard"}
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-VALID_AVATARS = {"scout", "defence", "patrol", "medic", "drone", "engineer"}
-VALID_DIFFICULTIES = {"Easy", "Medium", "Hard"}
+
+@app.errorhandler(DatabaseConfigError)
+def handle_db_config_error(error: DatabaseConfigError):
+  return jsonify({"error": str(error)}), 500
+
+
+@app.errorhandler(psycopg2.Error)
+def handle_psycopg_error(error: psycopg2.Error):
+  app.logger.exception("Database error", exc_info=error)
+  return jsonify({"error": "Database request failed"}), 500
+
+
+def _player_payload(row: Dict[str, Any]) -> Dict[str, Any]:
+  return {
+    "id": row["player_id"],
+    "name": row["name"],
+    "age": row["age"],
+    "avatar": row["avatar"],
+    "createdAt": _serialize(row["created_at"]),
+    "updatedAt": _serialize(row["updated_at"]),
+  }
+
+
+def _leaderboard_payload(row: Dict[str, Any]) -> Dict[str, Any]:
+  return {
+    "name": row["name"],
+    "age": row["age"],
+    "score": int(row["score"]),
+    "acc": int(row["acc"]),
+    "date": row["date"],
+    "avatar": row["avatar"],
+    "playerId": row["player_id"],
+    "sessionId": row["session_id"],
+  }
+
+
+def _round_payload(row: Dict[str, Any]) -> Dict[str, Any]:
+  return {
+    "roundNumber": int(row["round_number"]),
+    "sceneName": row["scene_name"],
+    "difficulty": row["difficulty"],
+    "weights": row["weights"] or {},
+    "timingMs": int(row["timing_ms"]),
+    "results": row["results"] or {},
+    "botUsed": row["bot_used"],
+    "loggedAt": _serialize(row["logged_at"]),
+  }
+
+
+def _session_payload(row: Dict[str, Any], rounds: List[Dict[str, Any]] | None = None) -> Dict[str, Any]:
+  payload: Dict[str, Any] = {
+    "id": row["session_id"],
+    "playerId": row["player_id"],
+    "avatar": row["avatar"],
+    "startedAt": _serialize(row["started_at"]),
+    "endedAt": _serialize(row["ended_at"]),
+    "totalScore": int(row["total_score"]),
+    "avgAccuracy": int(row["avg_accuracy"]),
+    "roundCount": int(row["round_count"]),
+    "status": row["status"],
+  }
+  if rounds is not None:
+    payload["rounds"] = rounds
+  return payload
+
+
+def _get_session_or_404(cur, session_id: str) -> Dict[str, Any]:
+  cur.execute("SELECT * FROM sessions WHERE session_id = %s", (session_id,))
+  row = cur.fetchone()
+  if not row:
+    raise LookupError("session not found")
+  return row
+
+
+def _get_player_or_404(cur, player_id: str) -> Dict[str, Any]:
+  cur.execute("SELECT * FROM players WHERE player_id = %s", (player_id,))
+  row = cur.fetchone()
+  if not row:
+    raise LookupError("player not found")
+  return row
 
 
 @app.route("/")
@@ -27,82 +123,16 @@ def home():
   return {"message": "Zombie API is running"}
 
 
-def _iso_to_display_date(value: str | None) -> str:
-  if not value:
-    return ""
-  try:
-    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return dt.date().isoformat()
-  except ValueError:
-    return value
-
-
-def _player_payload(snapshot) -> Dict[str, Any]:
-  data = snapshot.to_dict() or {}
-  return {
-    "id": snapshot.id,
-    "name": data.get("name", ""),
-    "age": data.get("age"),
-    "avatar": data.get("avatar"),
-    "createdAt": data.get("createdAt"),
-    "updatedAt": data.get("updatedAt"),
-  }
-
-
-def _leaderboard_payload(snapshot) -> Dict[str, Any]:
-  data = snapshot.to_dict() or {}
-  return {
-    "name": data.get("name", ""),
-    "age": str(data.get("age", "")),
-    "score": int(data.get("score") or 0),
-    "acc": int(data.get("acc") or 0),
-    "date": data.get("date") or _iso_to_display_date(data.get("createdAt")),
-    "avatar": data.get("avatar"),
-    "playerId": data.get("playerId"),
-    "sessionId": data.get("sessionId"),
-  }
-
-
-def _session_payload(snapshot, include_rounds: bool = False) -> Dict[str, Any]:
-  data = snapshot.to_dict() or {}
-  payload: Dict[str, Any] = {
-    "id": snapshot.id,
-    "playerId": data.get("playerId"),
-    "avatar": data.get("avatar"),
-    "startedAt": data.get("startedAt"),
-    "endedAt": data.get("endedAt"),
-    "totalScore": int(data.get("totalScore") or 0),
-    "avgAccuracy": int(data.get("avgAccuracy") or 0),
-    "roundCount": int(data.get("roundCount") or 0),
-  }
-  if include_rounds:
-    rounds: List[Dict[str, Any]] = []
-    for doc in snapshot.reference.collection("rounds").order_by("roundNumber").stream():
-      round_data = doc.to_dict() or {}
-      rounds.append(
-        {
-          "roundNumber": int(round_data.get("roundNumber") or 0),
-          "sceneName": round_data.get("sceneName", ""),
-          "difficulty": round_data.get("difficulty", ""),
-          "weights": round_data.get("weights") or {},
-          "timingMs": int(round_data.get("timingMs") or 0),
-          "results": round_data.get("results") or {},
-          "botUsed": round_data.get("botUsed"),
-          "loggedAt": round_data.get("loggedAt"),
-        }
-      )
-    payload["rounds"] = rounds
-  return payload
-
-
 @app.get("/api/health")
 def health():
+  with get_db():
+    pass
   return jsonify(
     {
       "status": "ok",
       "service": "zombie-backend",
       "timestamp": _now_utc_iso(),
-      "hasFirebaseCredentials": bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS")),
+      "database": "postgresql",
     }
   )
 
@@ -111,79 +141,105 @@ def health():
 def get_leaderboard():
   limit = request.args.get("limit", default=10, type=int) or 10
   limit = max(1, min(limit, 50))
-  db = get_db()
-  docs = db.collection("leaderboard").order_by("score", direction="DESCENDING").limit(limit).stream()
-  return jsonify({"items": [_leaderboard_payload(doc) for doc in docs]})
+  with get_db() as conn:
+    with conn.cursor() as cur:
+      cur.execute(
+        """
+        SELECT session_id, player_id, name, age, avatar, score, acc, date
+        FROM leaderboard
+        ORDER BY score DESC, acc DESC, created_at ASC
+        LIMIT %s
+        """,
+        (limit,),
+      )
+      rows = cur.fetchall()
+  return jsonify({"items": [_leaderboard_payload(row) for row in rows]})
 
 
 @app.get("/api/player/<player_id>")
 def get_player(player_id: str):
-  db = get_db()
-  snapshot = db.collection("players").document(player_id).get()
-  if not snapshot.exists:
-    return jsonify({"error": "player not found"}), 404
-  return jsonify(_player_payload(snapshot))
+  with get_db() as conn:
+    with conn.cursor() as cur:
+      try:
+        row = _get_player_or_404(cur, player_id)
+      except LookupError:
+        return jsonify({"error": "player not found"}), 404
+  return jsonify(_player_payload(row))
 
 
 @app.get("/api/session/<session_id>")
 def get_session(session_id: str):
   include_rounds = request.args.get("includeRounds", "").lower() in {"1", "true", "yes"}
-  db = get_db()
-  snapshot = db.collection("sessions").document(session_id).get()
-  if not snapshot.exists:
-    return jsonify({"error": "session not found"}), 404
-  return jsonify(_session_payload(snapshot, include_rounds=include_rounds))
+  with get_db() as conn:
+    with conn.cursor() as cur:
+      try:
+        session_row = _get_session_or_404(cur, session_id)
+      except LookupError:
+        return jsonify({"error": "session not found"}), 404
+
+      rounds: List[Dict[str, Any]] | None = None
+      if include_rounds:
+        cur.execute(
+          """
+          SELECT round_number, scene_name, difficulty, weights, timing_ms, results, bot_used, logged_at
+          FROM rounds
+          WHERE session_id = %s
+          ORDER BY round_number ASC
+          """,
+          (session_id,),
+        )
+        rounds = [_round_payload(row) for row in cur.fetchall()]
+  return jsonify(_session_payload(session_row, rounds=rounds))
 
 
 @app.get("/api/session/<session_id>/rounds")
 def get_session_rounds(session_id: str):
-  db = get_db()
-  sess_ref = db.collection("sessions").document(session_id)
-  if not sess_ref.get().exists:
-    return jsonify({"error": "session not found"}), 404
-  docs = sess_ref.collection("rounds").order_by("roundNumber").stream()
-  items = []
-  for doc in docs:
-    round_data = doc.to_dict() or {}
-    items.append(
-      {
-        "roundNumber": int(round_data.get("roundNumber") or 0),
-        "sceneName": round_data.get("sceneName", ""),
-        "difficulty": round_data.get("difficulty", ""),
-        "weights": round_data.get("weights") or {},
-        "timingMs": int(round_data.get("timingMs") or 0),
-        "results": round_data.get("results") or {},
-        "botUsed": round_data.get("botUsed"),
-        "loggedAt": round_data.get("loggedAt"),
-      }
-    )
+  with get_db() as conn:
+    with conn.cursor() as cur:
+      try:
+        _get_session_or_404(cur, session_id)
+      except LookupError:
+        return jsonify({"error": "session not found"}), 404
+      cur.execute(
+        """
+        SELECT round_number, scene_name, difficulty, weights, timing_ms, results, bot_used, logged_at
+        FROM rounds
+        WHERE session_id = %s
+        ORDER BY round_number ASC
+        """,
+        (session_id,),
+      )
+      items = [_round_payload(row) for row in cur.fetchall()]
   return jsonify({"items": items})
 
 
 @app.get("/api/session/<session_id>/survey")
 def get_session_survey(session_id: str):
-  db = get_db()
-  sess_ref = db.collection("sessions").document(session_id)
-  if not sess_ref.get().exists:
-    return jsonify({"error": "session not found"}), 404
-  snapshot = sess_ref.collection("surveys").document("post_game").get()
-  if not snapshot.exists:
-    return jsonify({"error": "survey not found"}), 404
-  return jsonify(snapshot.to_dict() or {})
+  with get_db() as conn:
+    with conn.cursor() as cur:
+      try:
+        _get_session_or_404(cur, session_id)
+      except LookupError:
+        return jsonify({"error": "session not found"}), 404
+      cur.execute("SELECT * FROM surveys WHERE session_id = %s", (session_id,))
+      row = cur.fetchone()
+      if not row:
+        return jsonify({"error": "survey not found"}), 404
+  return jsonify(
+    {
+      "q1_graph_meaning": row["q1_graph_meaning"],
+      "q2_weight_fairness": row["q2_weight_fairness"],
+      "q3_weights_affect_fairness": row["q3_weights_affect_fairness"],
+      "q4_ai_label_group": row["q4_ai_label_group"],
+      "q5_weight_definition": row["q5_weight_definition"],
+      "q6_confidence": int(row["q6_confidence"]),
+      "submittedAt": _serialize(row["submitted_at"]),
+    }
+  )
 
 
 @app.post("/api/player")
 def create_player():
-  """
-  Create or update a player document.
-
-  Body:
-  {
-    "name": "Alex",
-    "age": 12,
-    "avatar": "scout"
-  }
-  """
   data = request.get_json(force=True, silent=True) or {}
   name = (data.get("name") or "").strip()
   age = data.get("age")
@@ -200,37 +256,30 @@ def create_player():
   if avatar not in VALID_AVATARS:
     return jsonify({"error": "invalid avatar"}), 400
 
-  db = get_db()
-  player_id = data.get("playerId") or str(uuid.uuid4())
+  player_id = (data.get("playerId") or str(uuid.uuid4())).strip()
 
-  doc_ref = db.collection("players").document(player_id)
-  existing = doc_ref.get()
-  created_at = (existing.to_dict() or {}).get("createdAt") if existing.exists else _now_utc_iso()
-  doc_ref.set(
-    {
-      "name": name,
-      "age": age_val,
-      "avatar": avatar,
-      "updatedAt": _now_utc_iso(),
-      "createdAt": created_at,
-    },
-    merge=True,
-  )
+  with get_db() as conn:
+    with conn.cursor() as cur:
+      cur.execute(
+        """
+        INSERT INTO players (player_id, name, age, avatar, created_at, updated_at)
+        VALUES (%s, %s, %s, %s, NOW(), NOW())
+        ON CONFLICT (player_id) DO UPDATE
+        SET name = EXCLUDED.name,
+            age = EXCLUDED.age,
+            avatar = EXCLUDED.avatar,
+            updated_at = NOW()
+        RETURNING *
+        """,
+        (player_id, name, age_val, avatar),
+      )
+      row = cur.fetchone()
 
-  return jsonify({"playerId": player_id, "player": _player_payload(doc_ref.get())})
+  return jsonify({"playerId": player_id, "player": _player_payload(row)})
 
 
 @app.post("/api/session/start")
 def start_session():
-  """
-  Start a new game session for a player.
-
-  Body:
-  {
-    "playerId": "...",
-    "avatar": "scout"
-  }
-  """
   data = request.get_json(force=True, silent=True) or {}
   player_id = (data.get("playerId") or "").strip()
   avatar = data.get("avatar") or "scout"
@@ -240,50 +289,31 @@ def start_session():
   if avatar not in VALID_AVATARS:
     return jsonify({"error": "invalid avatar"}), 400
 
-  db = get_db()
-  player_snapshot = db.collection("players").document(player_id).get()
-  if not player_snapshot.exists:
-    return jsonify({"error": "player not found"}), 404
   session_id = str(uuid.uuid4())
-  sess_ref = db.collection("sessions").document(session_id)
-  sess_ref.set(
-    {
-      "playerId": player_id,
-      "avatar": avatar,
-      "startedAt": _now_utc_iso(),
-      "endedAt": None,
-      "totalScore": 0,
-      "avgAccuracy": 0,
-      "roundCount": 0,
-      "status": "active",
-    }
-  )
+  with get_db() as conn:
+    with conn.cursor() as cur:
+      try:
+        _get_player_or_404(cur, player_id)
+      except LookupError:
+        return jsonify({"error": "player not found"}), 404
+      cur.execute(
+        """
+        INSERT INTO sessions (
+          session_id, player_id, avatar, started_at, ended_at,
+          total_score, avg_accuracy, round_count, status
+        )
+        VALUES (%s, %s, %s, NOW(), NULL, 0, 0, 0, 'active')
+        RETURNING *
+        """,
+        (session_id, player_id, avatar),
+      )
+      row = cur.fetchone()
 
-  return jsonify({"sessionId": session_id, "session": _session_payload(sess_ref.get())})
+  return jsonify({"sessionId": session_id, "session": _session_payload(row)})
 
 
 @app.post("/api/session/<session_id>/round")
 def log_round(session_id: str):
-  """
-  Log data for a single round in a session.
-
-  Body example:
-  {
-    "roundNumber": 1,
-    "sceneName": "The Park",
-    "difficulty": "Easy",
-    "weights": { "skin": 7, "walk": 4, "temp": 5 },
-    "timingMs": 12345,
-    "results": {
-      "correct": 6,
-      "missed": 1,
-      "wrong": 1,
-      "accuracy": 75,
-      "score": 45
-    },
-    "botUsed": "defence"
-  }
-  """
   data: Dict[str, Any] = request.get_json(force=True, silent=True) or {}
   try:
     round_number = int(data.get("roundNumber") or 0)
@@ -292,185 +322,232 @@ def log_round(session_id: str):
   if round_number <= 0:
     return jsonify({"error": "roundNumber must be >= 1"}), 400
 
-  db = get_db()
-  sess_ref = db.collection("sessions").document(session_id)
-  if not sess_ref.get().exists:
-    return jsonify({"error": "session not found"}), 404
-
   scene_name = data.get("sceneName") or ""
   difficulty = data.get("difficulty") or ""
-  weights = data.get("weights") or {}
   if difficulty and difficulty not in VALID_DIFFICULTIES:
     return jsonify({"error": "invalid difficulty"}), 400
+
   try:
     timing_ms = int(data.get("timingMs") or 0)
   except (TypeError, ValueError):
     return jsonify({"error": "timingMs must be a number"}), 400
+
+  weights = data.get("weights") or {}
   results = data.get("results") or {}
   bot_used = data.get("botUsed") or None
   if bot_used and bot_used not in VALID_AVATARS:
     return jsonify({"error": "invalid botUsed"}), 400
 
-  round_ref = sess_ref.collection("rounds").document(str(round_number))
-  round_ref.set(
-    {
-      "roundNumber": round_number,
-      "sceneName": scene_name,
-      "difficulty": difficulty,
-      "weights": {
-        "skin": int(weights.get("skin") or 0),
-        "walk": int(weights.get("walk") or 0),
-        "temp": int(weights.get("temp") or 0),
-      },
-      "timingMs": timing_ms,
-      "results": {
-        "correct": int(results.get("correct") or 0),
-        "missed": int(results.get("missed") or 0),
-        "wrong": int(results.get("wrong") or 0),
-        "accuracy": int(results.get("accuracy") or 0),
-        "score": int(results.get("score") or 0),
-      },
-      "botUsed": bot_used,
-      "loggedAt": _now_utc_iso(),
-    }
-  )
+  weights_payload = {
+    "skin": int(weights.get("skin") or 0),
+    "walk": int(weights.get("walk") or 0),
+    "temp": int(weights.get("temp") or 0),
+  }
+  results_payload = {
+    "correct": int(results.get("correct") or 0),
+    "missed": int(results.get("missed") or 0),
+    "wrong": int(results.get("wrong") or 0),
+    "accuracy": int(results.get("accuracy") or 0),
+    "score": int(results.get("score") or 0),
+  }
 
-  sess_ref.set({"roundCount": max(round_number, int((sess_ref.get().to_dict() or {}).get("roundCount") or 0))}, merge=True)
+  with get_db() as conn:
+    with conn.cursor() as cur:
+      try:
+        _get_session_or_404(cur, session_id)
+      except LookupError:
+        return jsonify({"error": "session not found"}), 404
+
+      cur.execute(
+        """
+        INSERT INTO rounds (
+          session_id, round_number, scene_name, difficulty,
+          weights, timing_ms, results, bot_used, logged_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+        ON CONFLICT (session_id, round_number) DO UPDATE
+        SET scene_name = EXCLUDED.scene_name,
+            difficulty = EXCLUDED.difficulty,
+            weights = EXCLUDED.weights,
+            timing_ms = EXCLUDED.timing_ms,
+            results = EXCLUDED.results,
+            bot_used = EXCLUDED.bot_used,
+            logged_at = NOW()
+        """,
+        (
+          session_id,
+          round_number,
+          scene_name,
+          difficulty,
+          Json(weights_payload),
+          timing_ms,
+          Json(results_payload),
+          bot_used,
+        ),
+      )
+      cur.execute(
+        """
+        UPDATE sessions
+        SET round_count = GREATEST(round_count, %s)
+        WHERE session_id = %s
+        """,
+        (round_number, session_id),
+      )
 
   return jsonify({"status": "ok"})
 
 
 @app.post("/api/session/<session_id>/finish")
 def finish_session(session_id: str):
-  """
-  Mark a session as finished and store summary scores.
-
-  Body:
-  {
-    "totalScore": 120,
-    "avgAccuracy": 82
-  }
-  """
   data = request.get_json(force=True, silent=True) or {}
   total_score = int(data.get("totalScore") or 0)
   avg_accuracy = int(data.get("avgAccuracy") or 0)
 
-  db = get_db()
-  sess_ref = db.collection("sessions").document(session_id)
-  if not sess_ref.get().exists:
-    return jsonify({"error": "session not found"}), 404
+  with get_db() as conn:
+    with conn.cursor() as cur:
+      try:
+        _get_session_or_404(cur, session_id)
+      except LookupError:
+        return jsonify({"error": "session not found"}), 404
 
-  sess_ref.set(
-    {
-      "totalScore": total_score,
-      "avgAccuracy": avg_accuracy,
-      "endedAt": _now_utc_iso(),
-      "status": "finished",
-    },
-    merge=True,
-  )
+      cur.execute(
+        """
+        UPDATE sessions
+        SET total_score = %s,
+            avg_accuracy = %s,
+            ended_at = NOW(),
+            status = 'finished'
+        WHERE session_id = %s
+        RETURNING *
+        """,
+        (total_score, avg_accuracy, session_id),
+      )
+      session_row = cur.fetchone()
 
-  session_snapshot = sess_ref.get()
-  session_data = session_snapshot.to_dict() or {}
-  player_id = session_data.get("playerId")
-  player_snapshot = db.collection("players").document(player_id).get() if player_id else None
-  player_data = player_snapshot.to_dict() if player_snapshot and player_snapshot.exists else {}
-  entry = {
-    "playerId": player_id,
-    "sessionId": session_id,
-    "name": player_data.get("name", "Player"),
-    "age": player_data.get("age", ""),
-    "avatar": session_data.get("avatar"),
-    "score": total_score,
-    "acc": avg_accuracy,
-    "date": datetime.now().date().isoformat(),
-    "createdAt": _now_utc_iso(),
-  }
-  db.collection("leaderboard").document(session_id).set(entry, merge=True)
+      cur.execute(
+        """
+        SELECT p.player_id, p.name, p.age, s.avatar
+        FROM sessions s
+        JOIN players p ON p.player_id = s.player_id
+        WHERE s.session_id = %s
+        """,
+        (session_id,),
+      )
+      player_row = cur.fetchone()
 
-  return jsonify({"status": "ok", "leaderboardEntry": entry})
+      leaderboard_date = _now_utc().date().isoformat()
+      cur.execute(
+        """
+        INSERT INTO leaderboard (
+          session_id, player_id, name, age, avatar, score, acc, date, created_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+        ON CONFLICT (session_id) DO UPDATE
+        SET player_id = EXCLUDED.player_id,
+            name = EXCLUDED.name,
+            age = EXCLUDED.age,
+            avatar = EXCLUDED.avatar,
+            score = EXCLUDED.score,
+            acc = EXCLUDED.acc,
+            date = EXCLUDED.date
+        RETURNING session_id, player_id, name, age, avatar, score, acc, date
+        """,
+        (
+          session_id,
+          player_row["player_id"],
+          player_row["name"],
+          str(player_row["age"]),
+          player_row["avatar"],
+          total_score,
+          avg_accuracy,
+          leaderboard_date,
+        ),
+      )
+      leaderboard_row = cur.fetchone()
+
+  return jsonify({"status": "ok", "leaderboardEntry": _leaderboard_payload(leaderboard_row)})
 
 
 @app.post("/api/session/<session_id>/survey")
 def save_survey(session_id: str):
-  """
-  Store all 6 post-game survey answers for a session.
-
-  Body:
-  {
-    "q1_graph_meaning": "...",
-    "q2_weight_fairness": "Dogs",
-    "q3_weights_affect_fairness": "Yes, because ...",
-    "q4_ai_label_group": "Cats",
-    "q5_weight_definition": "...",
-    "q6_confidence": 7
-  }
-  """
   data: Dict[str, Any] = request.get_json(force=True, silent=True) or {}
-
-  db = get_db()
-  sess_ref = db.collection("sessions").document(session_id)
-  if not sess_ref.get().exists:
-    return jsonify({"error": "session not found"}), 404
-
-  survey_ref = sess_ref.collection("surveys").document("post_game")
   q6_confidence = int(data.get("q6_confidence") or 0)
   if q6_confidence < 1 or q6_confidence > 10:
     return jsonify({"error": "q6_confidence must be between 1 and 10"}), 400
-  survey_ref.set(
-    {
-      "q1_graph_meaning": data.get("q1_graph_meaning") or "",
-      "q2_weight_fairness": data.get("q2_weight_fairness") or "",
-      "q3_weights_affect_fairness": data.get("q3_weights_affect_fairness") or "",
-      "q4_ai_label_group": data.get("q4_ai_label_group") or "",
-      "q5_weight_definition": data.get("q5_weight_definition") or "",
-      "q6_confidence": q6_confidence,
-      "submittedAt": _now_utc_iso(),
-    }
-  )
+
+  with get_db() as conn:
+    with conn.cursor() as cur:
+      try:
+        _get_session_or_404(cur, session_id)
+      except LookupError:
+        return jsonify({"error": "session not found"}), 404
+
+      cur.execute(
+        """
+        INSERT INTO surveys (
+          session_id,
+          q1_graph_meaning,
+          q2_weight_fairness,
+          q3_weights_affect_fairness,
+          q4_ai_label_group,
+          q5_weight_definition,
+          q6_confidence,
+          submitted_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+        ON CONFLICT (session_id) DO UPDATE
+        SET q1_graph_meaning = EXCLUDED.q1_graph_meaning,
+            q2_weight_fairness = EXCLUDED.q2_weight_fairness,
+            q3_weights_affect_fairness = EXCLUDED.q3_weights_affect_fairness,
+            q4_ai_label_group = EXCLUDED.q4_ai_label_group,
+            q5_weight_definition = EXCLUDED.q5_weight_definition,
+            q6_confidence = EXCLUDED.q6_confidence,
+            submitted_at = NOW()
+        """,
+        (
+          session_id,
+          data.get("q1_graph_meaning") or "",
+          data.get("q2_weight_fairness") or "",
+          data.get("q3_weights_affect_fairness") or "",
+          data.get("q4_ai_label_group") or "",
+          data.get("q5_weight_definition") or "",
+          q6_confidence,
+        ),
+      )
 
   return jsonify({"status": "ok"})
 
 
 @app.post("/api/event")
 def log_event():
-  """
-  Optional analytics-style events endpoint.
-
-  Body:
-  {
-    "playerId": "...",
-    "sessionId": "...",
-    "roundNumber": 1,
-    "type": "slider_change",
-    "feature": "skin",
-    "value": 7,
-    "meta": {...}
-  }
-  """
   data: Dict[str, Any] = request.get_json(force=True, silent=True) or {}
   event_type = data.get("type") or ""
   if not event_type:
     return jsonify({"error": "type is required"}), 400
 
-  db = get_db()
-  ev_ref = db.collection("events").document()
-  payload = {
-    "type": event_type,
-    "playerId": data.get("playerId"),
-    "sessionId": data.get("sessionId"),
-    "roundNumber": data.get("roundNumber"),
-    "feature": data.get("feature"),
-    "value": data.get("value"),
-    "meta": data.get("meta") or {},
-    "createdAt": _now_utc_iso(),
-  }
-  ev_ref.set(payload)
+  with get_db() as conn:
+    with conn.cursor() as cur:
+      cur.execute(
+        """
+        INSERT INTO events (
+          player_id, session_id, round_number, event_type, feature, value, meta, created_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+        """,
+        (
+          data.get("playerId"),
+          data.get("sessionId"),
+          data.get("roundNumber"),
+          event_type,
+          data.get("feature"),
+          None if data.get("value") is None else str(data.get("value")),
+          Json(data.get("meta") or {}),
+        ),
+      )
 
   return jsonify({"status": "ok"})
 
 
 if __name__ == "__main__":
-  # Local development entrypoint
   app.run(host="0.0.0.0", port=5000, debug=True)
 
