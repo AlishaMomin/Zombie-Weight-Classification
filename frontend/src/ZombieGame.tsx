@@ -1346,7 +1346,20 @@ function Typewriter({ text, onDone }: TypewriterProps) {
 }
 
 // ── Main App ─────────────────────────────────────────────────────────────────
-type Screen = "intro" | "narration" | "game" | "roundResult" | "leaderboard";
+type Screen =
+  | "intro"
+  | "narration"
+  | "game"
+  | "roundResult"
+  | "leaderboard"
+  | "survey_q1"   // After Round 1: graph meaning (open text)
+  | "survey_q1b"  // After Q1: training intro text
+  | "survey_q2"   // After Round 1: cats/dogs weight fairness (MC)
+  | "survey_q2b"  // After Q2: "Great job thinking" text
+  | "survey_q3"   // After Round 2: weights affect fairness (MC)
+  | "survey_q4"   // After Round 2: AI label group (MC + image)
+  | "survey_q5"   // After Round 3: weight definition (open text)
+  | "survey_q6";  // After Round 3: confidence scale 1-10
 
 const ZombieGame: React.FC = () => {
   const [screen, setScreen] = useState<Screen>("intro");
@@ -1368,12 +1381,21 @@ const ZombieGame: React.FC = () => {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [showLeaderboardOverlay, setShowLeaderboardOverlay] = useState(false);
   const [gameTimerMs, setGameTimerMs] = useState(0);
+  const [playerId, setPlayerId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [ansQ1, setAnsQ1] = useState("");
+  const [ansQ2, setAnsQ2] = useState<string | null>(null);
+  const [ansQ3, setAnsQ3] = useState<string | null>(null);
+  const [ansQ4, setAnsQ4] = useState<string | null>(null);
+  const [ansQ5, setAnsQ5] = useState("");
+  const [ansQ6, setAnsQ6] = useState<number>(5);
+  const [surveyError, setSurveyError] = useState("");
 
   useEffect(() => {
     loadLB().then(setLeaderboard);
   }, []);
 
-  const handleStart = () => {
+  const handleStart = async () => {
     if (!avatar) {
       setNameErr("Please choose your bot avatar!");
       return;
@@ -1393,6 +1415,28 @@ const ZombieGame: React.FC = () => {
     setNarrDone(false);
     setRoundScores([]);
     setRoundResult(null);
+    setSurveyError("");
+    setAnsQ1(""); setAnsQ2(null); setAnsQ3(null);
+    setAnsQ4(null); setAnsQ5(""); setAnsQ6(5);
+    try {
+      const pRes = await fetch("http://localhost:5000/api/player", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), age: ageNum, avatar })
+      });
+      const pData = await pRes.json();
+      const pid = pData.playerId as string;
+      setPlayerId(pid);
+      const sRes = await fetch("http://localhost:5000/api/session/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId: pid, avatar })
+      });
+      const sData = await sRes.json();
+      setSessionId(sData.sessionId as string);
+    } catch {
+      // Backend offline — continue in offline mode
+    }
     setScreen("narration");
   };
 
@@ -1451,35 +1495,17 @@ const ZombieGame: React.FC = () => {
     setScreen("roundResult");
   };
 
-  const handleNextRound = async () => {
+  const handleNextRound = () => {
     if (!roundResult) return;
-    const newScores = [...roundScores, roundResult];
-    setRoundScores(newScores);
-    if (round < 2) {
-      setRound((r) => r + 1);
-      setNarrLine(0);
-      setNarrDone(false);
-      setRoundResult(null);
-      setWeights({ s: 7, w: 4, b: 5 });
-      setScreen("narration");
+    setRoundScores((prev) => [...prev, roundResult!]);
+    setRoundResult(null);
+    setSurveyError("");
+    if (round === 0) {
+      setScreen("survey_q1");
+    } else if (round === 1) {
+      setScreen("survey_q3");
     } else {
-      const total = newScores.reduce((s, r) => s + r.score, 0);
-      const avgAcc = Math.round(
-        newScores.reduce((s, r) => s + r.acc, 0) / newScores.length
-      );
-      const entry: LeaderboardEntry = {
-        name,
-        age,
-        score: total,
-        acc: avgAcc,
-        date: new Date().toLocaleDateString()
-      };
-      const updated = [...leaderboard, entry]
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 10);
-      setLeaderboard(updated);
-      await saveLB(updated);
-      setScreen("leaderboard");
+      setScreen("survey_q5");
     }
   };
 
@@ -1493,6 +1519,119 @@ const ZombieGame: React.FC = () => {
     setRoundScores([]);
     setRoundResult(null);
     setWeights({ s: 7, w: 4, b: 5 });
+    setPlayerId(null);
+    setSessionId(null);
+    setSurveyError("");
+    setAnsQ1(""); setAnsQ2(null); setAnsQ3(null);
+    setAnsQ4(null); setAnsQ5(""); setAnsQ6(5);
+  };
+
+  const continueQ1 = () => {
+    if (!ansQ1.trim()) {
+      setSurveyError("Please answer this question before continuing.");
+      return;
+    }
+    setSurveyError("");
+    setScreen("survey_q1b");
+  };
+
+  const continueQ1b = () => {
+    setSurveyError("");
+    setScreen("survey_q2");
+  };
+
+  const continueQ2 = () => {
+    if (!ansQ2) {
+      setSurveyError("Please select an answer before continuing.");
+      return;
+    }
+    setSurveyError("");
+    setScreen("survey_q2b");
+  };
+
+  const continueQ2b = () => {
+    setSurveyError("");
+    setRound((r) => r + 1);
+    setNarrLine(0);
+    setNarrDone(false);
+    setScreen("narration");
+  };
+
+  const continueQ3 = () => {
+    if (!ansQ3) {
+      setSurveyError("Please select an answer before continuing.");
+      return;
+    }
+    setSurveyError("");
+    setScreen("survey_q4");
+  };
+
+  const continueQ4 = () => {
+    if (!ansQ4) {
+      setSurveyError("Please select an answer before continuing.");
+      return;
+    }
+    setSurveyError("");
+    setRound((r) => r + 1);
+    setNarrLine(0);
+    setNarrDone(false);
+    setScreen("narration");
+  };
+
+  const continueQ5 = () => {
+    if (!ansQ5.trim()) {
+      setSurveyError("Please answer this question before continuing.");
+      return;
+    }
+    setSurveyError("");
+    setScreen("survey_q6");
+  };
+
+  const continueQ6 = async () => {
+    setSurveyError("");
+    const scores = roundScores;
+    const total = scores.reduce((s, r) => s + r.score, 0);
+    const avgAcc =
+      scores.length > 0
+        ? Math.round(scores.reduce((s, r) => s + r.acc, 0) / scores.length)
+        : 0;
+    try {
+      const sid = sessionId;
+      if (sid) {
+        await fetch(`http://localhost:5000/api/session/${sid}/survey`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            q1_graph_meaning: ansQ1,
+            q2_weight_fairness: ansQ2,
+            q3_weights_affect_fairness: ansQ3,
+            q4_ai_label_group: ansQ4,
+            q5_weight_definition: ansQ5,
+            q6_confidence: ansQ6
+          })
+        });
+        await fetch(`http://localhost:5000/api/session/${sid}/finish`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ totalScore: total, avgAccuracy: avgAcc })
+        });
+      }
+    } catch {
+      // Offline — still go to leaderboard
+    }
+    const entry: LeaderboardEntry = {
+      name,
+      age,
+      score: total,
+      acc: avgAcc,
+      date: new Date().toLocaleDateString()
+    };
+    const updated = [...leaderboard, entry]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+    setLeaderboard(updated);
+    await saveLB(updated);
+    setScreen("leaderboard");
   };
 
   const S: React.CSSProperties = {
@@ -1985,6 +2124,222 @@ const ZombieGame: React.FC = () => {
         </div>
       </div>
     );
+  }
+
+  // ── SURVEY SCREENS ──────────────────────────────────────────────────────────
+  const surveyCard = (step: number, total: number, children: React.ReactNode) => (
+    <div style={{ ...S, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem" }}>
+      <div style={{ width: "100%", maxWidth: 640, fontFamily: "'Courier New', monospace" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ color: "#ff3333", fontSize: 11, fontWeight: "bold", letterSpacing: 2 }}>
+            ZOMBIE AI ACADEMY
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {Array.from({ length: total }, (_, i) => (
+              <div key={String(i)} style={{ width: 8, height: 8, borderRadius: "50%", background: i < step ? "#ff9900" : i === step - 1 ? "#ff9900" : "#333" }} />
+            ))}
+          </div>
+          <div style={{ color: "#444", fontSize: 11 }}>Q{step}/{total}</div>
+        </div>
+        <div style={{ background: "#111", border: "1px solid #222", borderRadius: 12, padding: "24px 28px" }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+
+  const continueBtn = (onClick: () => void, label = "Continue →") => (
+    <div style={{ textAlign: "right", marginTop: 20 }}>
+      <button onClick={onClick} style={{ padding: "10px 28px", background: "#cc2200", color: "#fff", borderRadius: 8, border: "none", fontSize: 14, fontWeight: "bold", cursor: "pointer", fontFamily: "'Courier New', monospace" }}>
+        {label}
+      </button>
+    </div>
+  );
+
+  const surveyErrorMsg = surveyError ? (
+    <div
+      style={{
+        marginTop: 12,
+        color: "#ff7a7a",
+        fontSize: 12,
+        background: "#220909",
+        border: "1px solid #553333",
+        borderRadius: 8,
+        padding: "8px 10px"
+      }}
+    >
+      {surveyError}
+    </div>
+  ) : null;
+
+  const mcOption = (name: string, value: string, current: string | null, set: (v: string) => void) => (
+    <label key={value} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: current === value ? "#ffdd88" : "#ccc", marginBottom: 8, cursor: "pointer", background: current === value ? "#1a1000" : "transparent", borderRadius: 6, padding: "6px 8px", border: current === value ? "1px solid #ff990044" : "1px solid transparent" }}>
+      <input type="radio" name={name} value={value} checked={current === value} onChange={() => { set(value); setSurveyError(""); }} style={{ accentColor: "#ff9900" }} />
+      <span>{value}</span>
+    </label>
+  );
+
+  // Q1 — After Round 1: graph meaning (open text)
+  if (screen === "survey_q1") {
+    return surveyCard(
+      1,
+      6,
+      <>
+        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
+          Great, you just passed the first level! Based on what you just did, can you tell me what this graph means?
+        </div>
+        <div style={{ background: "#000", borderRadius: 10, padding: 10, border: "1px solid #222", marginBottom: 12, textAlign: "center" }}>
+          <img src="/survey-image-2.png" alt="Graph illustration" style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain" }} />
+        </div>
+        <textarea
+          value={ansQ1}
+          onChange={(e) => {
+            setAnsQ1(e.target.value);
+            setSurveyError("");
+          }}
+          placeholder="Type your explanation here..."
+          style={{ width: "100%", minHeight: 90, background: "#0a0a0a", borderRadius: 8, border: "1px solid #333", color: "#eee", padding: "8px 10px", fontFamily: "'Courier New', monospace", fontSize: 13, boxSizing: "border-box", resize: "vertical" }}
+        />
+        {surveyErrorMsg}
+        {continueBtn(continueQ1)}
+      </>
+    );
+  }
+
+  // Text screen after Q1 submission
+  if (screen === "survey_q1b") {
+    return surveyCard(
+      2,
+      6,
+      <>
+        <div style={{ color: "#ccc", fontSize: 14, marginBottom: 12 }}>
+          Awesome! The next levels are a bit tricky, so let&apos;s complete some training before we get to it.
+        </div>
+        {continueBtn(continueQ1b)}
+      </>
+    );
+  }
+
+  // Q2 — After Round 1: cats/dogs weight fairness (MC)
+  if (screen === "survey_q2") {
+    return surveyCard(
+      2,
+      6,
+      <>
+        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 14 }}>
+          If a dataset has 90 cats and 10 dogs, and you wanted both cats and dogs to be equal, which class should likely receive a higher weight in order to make this fair?
+        </div>
+        {["Cats", "Dogs", "Both should have equal weight", "Neither should have weight"].map((opt) =>
+          mcOption("q2", opt, ansQ2, setAnsQ2)
+        )}
+        {surveyErrorMsg}
+        {continueBtn(continueQ2)}
+      </>
+    );
+  }
+
+  // Text screen after Q2 submission
+  if (screen === "survey_q2b") {
+    return surveyCard(
+      3,
+      6,
+      <>
+        <div style={{ color: "#ccc", fontSize: 14, marginBottom: 12 }}>
+          Great job thinking! On to the next level!!
+        </div>
+        {continueBtn(continueQ2b)}
+      </>
+    );
+  }
+
+  // Q3 — After Round 2: weights affect fairness (MC)
+  if (screen === "survey_q3") {
+    return surveyCard(
+      3,
+      6,
+      <>
+        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 14 }}>
+          Wow, that level was a bit challenging, awesome job getting through! But I wonder... how does changing weights affect fairness? Does it?
+        </div>
+        {[
+          "Yes, because it allows for customization in feature recognition",
+          "Yes, because it removes some data from the dataset",
+          "No, because it only makes the computer run faster",
+          "No, because it guesses the answers randomly"
+        ].map((opt) => mcOption("q3", opt, ansQ3, setAnsQ3))}
+        {surveyErrorMsg}
+        {continueBtn(continueQ3)}
+      </>
+    );
+  }
+
+  // Q4 — After Round 2: AI label group with image (MC)
+  if (screen === "survey_q4") {
+    return surveyCard(4, 6, <>
+      <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
+        Now if we were given this group and all weights were equal between cats, dogs, and plants, what would an AI label it?
+      </div>
+      <div style={{ background: "#000", borderRadius: 10, padding: 10, border: "1px solid #222", marginBottom: 14, textAlign: "center" }}>
+        <img src="/survey-image-1.png" alt="Group of animals" style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain" }} />
+      </div>
+      {["Dogs", "Cats", "Plants"].map((opt) => mcOption("q4", opt, ansQ4, setAnsQ4))}
+      {surveyErrorMsg}
+      {continueBtn(continueQ4)}
+    </>);
+  }
+
+  // Q5 — After Round 3: weight definition (open text)
+  if (screen === "survey_q5") {
+    return surveyCard(5, 6, <>
+      <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
+        What do you think &ldquo;weight&rdquo; means in AI?
+      </div>
+      <div style={{ color: "#888", fontSize: 12, marginBottom: 10 }}>
+        There is no single correct answer. Write what you think!
+      </div>
+      <textarea
+        value={ansQ5}
+        onChange={(e) => {
+          setAnsQ5(e.target.value);
+          setSurveyError("");
+        }}
+        placeholder="Type your thoughts here..."
+        style={{ width: "100%", minHeight: 100, background: "#0a0a0a", borderRadius: 8, border: "1px solid #333", color: "#eee", padding: "8px 10px", fontFamily: "'Courier New', monospace", fontSize: 13, boxSizing: "border-box", resize: "vertical" }}
+      />
+      {surveyErrorMsg}
+      {continueBtn(continueQ5)}
+    </>);
+  }
+
+  // Q6 — After Round 3: confidence scale 1-10
+  if (screen === "survey_q6") {
+    return surveyCard(6, 6, <>
+      <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
+        How confident are you in understanding how AI makes decisions?
+      </div>
+      <div style={{ color: "#888", fontSize: 12, marginBottom: 16 }}>
+        Scale: 1 = not confident at all &mdash; 10 = very confident. There is no wrong answer.
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+        <span style={{ fontSize: 12, color: "#777" }}>1</span>
+        <input
+          type="range"
+          min={1}
+          max={10}
+          value={ansQ6}
+          onChange={(e) => {
+            setAnsQ6(Number(e.target.value));
+            setSurveyError("");
+          }}
+          style={{ flex: 1, accentColor: "#ff9900" }}
+        />
+        <span style={{ fontSize: 12, color: "#777" }}>10</span>
+      </div>
+      <div style={{ fontSize: 16, color: "#ffcc66", fontWeight: "bold", marginBottom: 20 }}>
+        Your answer: {ansQ6} / 10
+      </div>
+      {continueBtn(continueQ6, "Finish & See Leaderboard \u2192")}
+    </>);
   }
 
   // GAME
@@ -2670,4 +3025,8 @@ const ZombieGame: React.FC = () => {
 };
 
 export default ZombieGame;
+
+
+
+
 
