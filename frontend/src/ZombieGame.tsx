@@ -235,6 +235,19 @@ async function saveLB(d: LeaderboardEntry[]): Promise<void> {
   }
 }
 
+async function fetchJsonOrThrow(url: string, init?: RequestInit) {
+  const res = await fetch(url, init);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+  }
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return res.json();
+  }
+  return null;
+}
+
 // ── Canvas Game Component ─────────────────────────────────────────────────────
 type GameCanvasProps = {
   round: number;
@@ -1441,23 +1454,21 @@ const ZombieGame: React.FC = () => {
     setAnsQ1(""); setAnsQ2(null); setAnsQ3(null);
     setAnsQ4(null); setAnsQ5(""); setAnsQ6(5);
     try {
-      const pRes = await fetch(`${API_BASE}/api/player`, {
+      const pData = await fetchJsonOrThrow(`${API_BASE}/api/player`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim(), age: ageNum, avatar })
       });
-      const pData = await pRes.json();
       const pid = pData.playerId as string;
       setPlayerId(pid);
-      const sRes = await fetch(`${API_BASE}/api/session/start`, {
+      const sData = await fetchJsonOrThrow(`${API_BASE}/api/session/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ playerId: pid, avatar })
       });
-      const sData = await sRes.json();
       setSessionId(sData.sessionId as string);
-    } catch {
-      // Backend offline — continue in offline mode
+    } catch (error) {
+      console.error("Failed to create player/session", error);
     }
     setScreen("tutorial");
   };
@@ -1525,31 +1536,40 @@ const ZombieGame: React.FC = () => {
     const sid = sessionId;
     const rd = ROUNDS_DATA[round];
     if (sid) {
-      void fetch(`${API_BASE}/api/session/${sid}/round`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          roundNumber: round + 1,
-          sceneName: rd.name,
-          difficulty: rd.difficulty,
-          weights: {
-            skin: weights.s,
-            walk: weights.w,
-            temp: weights.b
-          },
-          timingMs: Math.round(roundGameDurations[round] ?? gameTimerMs),
-          results: {
-            correct: evt.correct,
-            missed: evt.missed,
-            wrong: evt.wrong,
-            accuracy: evt.acc,
-            score: evt.score
-          },
-          botUsed: avatar || "scout"
-        })
-      }).catch(() => {
-        // Backend offline — keep local game flow running
-      });
+      void (async () => {
+        try {
+          await fetchJsonOrThrow(`${API_BASE}/api/session/${sid}/round`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              roundNumber: round + 1,
+              sceneName: rd.name,
+              difficulty: rd.difficulty,
+              weights: {
+                skin: weights.s,
+                walk: weights.w,
+                temp: weights.b
+              },
+              timingMs: Math.round(roundGameDurations[round] ?? gameTimerMs),
+              results: {
+                correct: evt.correct,
+                missed: evt.missed,
+                wrong: evt.wrong,
+                accuracy: evt.acc,
+                score: evt.score
+              },
+              botUsed: avatar || "scout"
+            })
+          });
+          console.log("Round saved to backend", {
+            roundNumber: round + 1,
+            timingMs: Math.round(roundGameDurations[round] ?? gameTimerMs),
+            weights
+          });
+        } catch (error) {
+          console.error("Failed to save round", error);
+        }
+      })();
     }
   };
 
@@ -1656,7 +1676,7 @@ const ZombieGame: React.FC = () => {
     try {
       const sid = sessionId;
       if (sid) {
-        await fetch(`${API_BASE}/api/session/${sid}/survey`, {
+        await fetchJsonOrThrow(`${API_BASE}/api/session/${sid}/survey`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1668,24 +1688,29 @@ const ZombieGame: React.FC = () => {
             q6_confidence: ansQ6
           })
         });
-        await fetch(`${API_BASE}/api/session/${sid}/finish`, {
+        console.log("Survey saved to backend", {
+          q1: ansQ1,
+          q2: ansQ2,
+          q3: ansQ3,
+          q4: ansQ4,
+          q5: ansQ5,
+          q6: ansQ6
+        });
+        await fetchJsonOrThrow(`${API_BASE}/api/session/${sid}/finish`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ totalScore: total, avgAccuracy: avgAcc })
         });
-        const lbRes = await fetch(`${API_BASE}/api/leaderboard?limit=10`);
-        if (lbRes.ok) {
-          const lbData = await lbRes.json();
-          if (Array.isArray(lbData.items)) {
-            setLeaderboard(lbData.items);
-            await saveLB(lbData.items);
-            setScreen("leaderboard");
-            return;
-          }
+        const lbData = await fetchJsonOrThrow(`${API_BASE}/api/leaderboard?limit=10`);
+        if (Array.isArray(lbData.items)) {
+          setLeaderboard(lbData.items);
+          await saveLB(lbData.items);
+          setScreen("leaderboard");
+          return;
         }
       }
-    } catch {
-      // Offline — still go to leaderboard
+    } catch (error) {
+      console.error("Failed to save survey/final score", error);
     }
     const entry: LeaderboardEntry = {
       name,
