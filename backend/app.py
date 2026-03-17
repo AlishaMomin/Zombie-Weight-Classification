@@ -22,6 +22,11 @@ VALID_AVATARS = {"scout", "defence", "patrol", "medic", "drone", "engineer"}
 VALID_DIFFICULTIES = {"Easy", "Medium", "Hard"}
 
 
+@app.route("/")
+def home():
+  return {"message": "Zombie API is running"}
+
+
 def _iso_to_display_date(value: str | None) -> str:
   if not value:
     return ""
