@@ -69,6 +69,9 @@ const API_BASE = (
     : "http://localhost:5000")
 ).replace(/\/$/, "");
 
+const ASSET_BASE = import.meta.env.BASE_URL;
+const assetUrl = (file: string) => `${ASSET_BASE}${file}`;
+
 // ── Game Data ─────────────────────────────────────────────────────────────────
 const ROUNDS_DATA: RoundConfig[] = [
   {
@@ -2084,7 +2087,7 @@ const ZombieGame: React.FC = () => {
                   minHeight: 320
                 }}
               >
-                <source src="/tutorial-video.mp4" type="video/mp4" />
+                <source src={assetUrl("tutorial-video.mp4")} type="video/mp4" />
                 Your browser does not support the video tag.
               </video>
             </div>
@@ -2458,7 +2461,7 @@ const ZombieGame: React.FC = () => {
           Great, you just passed the first level! Based on what you just did, can you tell me what this graph means?
         </div>
         <div style={{ background: "#000", borderRadius: 10, padding: 10, border: "1px solid #222", marginBottom: 12, textAlign: "center" }}>
-          <img src="/survey-image-2.png" alt="Graph illustration" style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain" }} />
+          <img src={assetUrl("survey-image-2.png")} alt="Graph illustration" style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain" }} />
         </div>
         <textarea
           value={ansQ1}
@@ -2549,7 +2552,7 @@ const ZombieGame: React.FC = () => {
         Now if we were given this group and all weights were equal between cats, dogs, and plants, what would an AI label it?
       </div>
       <div style={{ background: "#000", borderRadius: 10, padding: 10, border: "1px solid #222", marginBottom: 14, textAlign: "center" }}>
-        <img src="/survey-image-1.png" alt="Group of animals" style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain" }} />
+        <img src={assetUrl("survey-image-1.png")} alt="Group of animals" style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain" }} />
       </div>
       {["Dogs", "Cats", "Plants"].map((opt) => mcOption("q4", opt, ansQ4, setAnsQ4))}
       {surveyErrorMsg}
