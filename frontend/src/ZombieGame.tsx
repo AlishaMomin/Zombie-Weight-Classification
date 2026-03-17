@@ -62,6 +62,10 @@ type LeaderboardEntry = {
   date: string;
 };
 
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000"
+).replace(/\/$/, "");
+
 // ── Game Data ─────────────────────────────────────────────────────────────────
 const ROUNDS_DATA: RoundConfig[] = [
   {
@@ -198,6 +202,17 @@ const storageApi = {
 };
 
 async function loadLB(): Promise<LeaderboardEntry[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/leaderboard?limit=10`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.items)) {
+        return data.items as LeaderboardEntry[];
+      }
+    }
+  } catch {
+    // fallback to local cache below
+  }
   try {
     const r = await storageApi.get("zai-lb2");
     return r ? (JSON.parse(r.value) as LeaderboardEntry[]) : [];
@@ -1420,7 +1435,7 @@ const ZombieGame: React.FC = () => {
     setAnsQ1(""); setAnsQ2(null); setAnsQ3(null);
     setAnsQ4(null); setAnsQ5(""); setAnsQ6(5);
     try {
-      const pRes = await fetch("http://localhost:5000/api/player", {
+      const pRes = await fetch(`${API_BASE}/api/player`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim(), age: ageNum, avatar })
@@ -1428,7 +1443,7 @@ const ZombieGame: React.FC = () => {
       const pData = await pRes.json();
       const pid = pData.playerId as string;
       setPlayerId(pid);
-      const sRes = await fetch("http://localhost:5000/api/session/start", {
+      const sRes = await fetch(`${API_BASE}/api/session/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ playerId: pid, avatar })
@@ -1500,6 +1515,36 @@ const ZombieGame: React.FC = () => {
     }
     setRoundResult(evt);
     setScreen("roundResult");
+
+    const sid = sessionId;
+    const rd = ROUNDS_DATA[round];
+    if (sid) {
+      void fetch(`${API_BASE}/api/session/${sid}/round`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roundNumber: round + 1,
+          sceneName: rd.name,
+          difficulty: rd.difficulty,
+          weights: {
+            skin: weights.s,
+            walk: weights.w,
+            temp: weights.b
+          },
+          timingMs: Math.round(roundGameDurations[round] ?? gameTimerMs),
+          results: {
+            correct: evt.correct,
+            missed: evt.missed,
+            wrong: evt.wrong,
+            accuracy: evt.acc,
+            score: evt.score
+          },
+          botUsed: avatar || "scout"
+        })
+      }).catch(() => {
+        // Backend offline — keep local game flow running
+      });
+    }
   };
 
   const handleNextRound = () => {
@@ -1605,7 +1650,7 @@ const ZombieGame: React.FC = () => {
     try {
       const sid = sessionId;
       if (sid) {
-        await fetch(`http://localhost:5000/api/session/${sid}/survey`, {
+        await fetch(`${API_BASE}/api/session/${sid}/survey`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1617,11 +1662,21 @@ const ZombieGame: React.FC = () => {
             q6_confidence: ansQ6
           })
         });
-        await fetch(`http://localhost:5000/api/session/${sid}/finish`, {
+        await fetch(`${API_BASE}/api/session/${sid}/finish`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ totalScore: total, avgAccuracy: avgAcc })
         });
+        const lbRes = await fetch(`${API_BASE}/api/leaderboard?limit=10`);
+        if (lbRes.ok) {
+          const lbData = await lbRes.json();
+          if (Array.isArray(lbData.items)) {
+            setLeaderboard(lbData.items);
+            await saveLB(lbData.items);
+            setScreen("leaderboard");
+            return;
+          }
+        }
       }
     } catch {
       // Offline — still go to leaderboard
