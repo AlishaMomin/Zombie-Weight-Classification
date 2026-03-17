@@ -1348,6 +1348,7 @@ function Typewriter({ text, onDone }: TypewriterProps) {
 // ── Main App ─────────────────────────────────────────────────────────────────
 type Screen =
   | "intro"
+  | "tutorial"
   | "narration"
   | "game"
   | "roundResult"
@@ -1437,6 +1438,12 @@ const ZombieGame: React.FC = () => {
     } catch {
       // Backend offline — continue in offline mode
     }
+    setScreen("tutorial");
+  };
+
+  const continueFromTutorial = () => {
+    setNarrLine(0);
+    setNarrDone(false);
     setScreen("narration");
   };
 
@@ -1935,6 +1942,210 @@ const ZombieGame: React.FC = () => {
             View Leaderboard 🏆
           </button>
         )}
+      </div>
+    );
+  }
+
+  // TUTORIAL
+  if (screen === "tutorial") {
+    return (
+      <div
+        style={{
+          ...S,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "2rem"
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 920,
+            display: "grid",
+            gridTemplateColumns: "1.2fr 0.8fr",
+            gap: 20
+          }}
+        >
+          <div
+            style={{
+              background: "#111",
+              border: "1px solid #222",
+              borderRadius: 14,
+              padding: "22px 24px"
+            }}
+          >
+            <div
+              style={{
+                color: "#ff3333",
+                fontSize: 12,
+                fontWeight: "bold",
+                letterSpacing: 2,
+                marginBottom: 8
+              }}
+            >
+              TUTORIAL
+            </div>
+            <div
+              style={{
+                color: "#fff",
+                fontSize: 22,
+                fontWeight: "bold",
+                marginBottom: 10
+              }}
+            >
+              Learn the tool before Round 1
+            </div>
+            <div
+              style={{
+                color: "#999",
+                fontSize: 13,
+                lineHeight: 1.7,
+                marginBottom: 18
+              }}
+            >
+              Add your walkthrough video here so players can learn how the
+              slider tool works before the missions begin.
+            </div>
+            <div
+              style={{
+                background: "#050505",
+                border: "1px solid #222",
+                borderRadius: 12,
+                padding: 12,
+                marginBottom: 12
+              }}
+            >
+              <video
+                controls
+                style={{
+                  width: "100%",
+                  borderRadius: 10,
+                  background: "#000",
+                  minHeight: 320
+                }}
+              >
+                <source src="/tutorial-video.mp4" type="video/mp4" />
+                Your browser does not support the video tag.
+              </video>
+            </div>
+            <div
+              style={{
+                color: "#666",
+                fontSize: 11
+              }}
+            >
+              Replace `frontend/public/tutorial-video.mp4` with your tutorial video.
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: "#111",
+              border: "1px solid #222",
+              borderRadius: 14,
+              padding: "22px 20px",
+              display: "flex",
+              flexDirection: "column"
+            }}
+          >
+            <div
+              style={{
+                color: "#ff9900",
+                fontSize: 12,
+                fontWeight: "bold",
+                letterSpacing: 2,
+                marginBottom: 14
+              }}
+            >
+              TRY THESE STEPS
+            </div>
+            {[
+              "Move one slider at a time so you can notice what changes.",
+              "Try a very low weight, then a very high weight, and compare the result.",
+              "Watch for mistakes: missed zombies and humans hit both matter.",
+              "Experiment before pressing eliminate so you can see how the AI reacts."
+            ].map((tip, i) => (
+              <div
+                key={tip}
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  alignItems: "flex-start",
+                  background: i % 2 === 0 ? "#171717" : "#14100a",
+                  border: "1px solid #2a2a2a",
+                  borderRadius: 12,
+                  padding: "12px 12px",
+                  marginBottom: 10
+                }}
+              >
+                <div
+                  style={{
+                    minWidth: 26,
+                    height: 26,
+                    borderRadius: "50%",
+                    background: "#261400",
+                    border: "1px solid #ff990044",
+                    color: "#ffcc66",
+                    fontSize: 12,
+                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}
+                >
+                  {i + 1}
+                </div>
+                <div
+                  style={{
+                    color: "#ddd",
+                    fontSize: 13,
+                    lineHeight: 1.6
+                  }}
+                >
+                  {tip}
+                </div>
+              </div>
+            ))}
+
+            <div
+              style={{
+                marginTop: "auto",
+                background: "#0f0d00",
+                border: "1px solid #3a2f00",
+                borderRadius: 10,
+                padding: "12px 14px",
+                color: "#cc9900",
+                fontSize: 12,
+                lineHeight: 1.7,
+                marginBottom: 16
+              }}
+            >
+              Hint bubble idea: use this space to guide students to test the
+              sliders instead of guessing immediately.
+            </div>
+
+            <button
+              onClick={continueFromTutorial}
+              style={{
+                width: "100%",
+                padding: "12px 0",
+                background: "#cc2200",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: "bold",
+                cursor: "pointer",
+                fontFamily: "'Courier New',monospace",
+                letterSpacing: 1
+              }}
+            >
+              CONTINUE TO BRIEFING →
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
