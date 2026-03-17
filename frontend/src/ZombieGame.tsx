@@ -62,6 +62,12 @@ type LeaderboardEntry = {
   date: string;
 };
 
+// ── Backend API ────────────────────────────────────────────────────────────────
+const AI_BACKEND_URL = "http://localhost:8000";
+
+type PredictItem = { id?: number; p_zombie: number; label: "zombie" | "human" };
+type PredictResponse = { threshold: number; items: PredictItem[] };
+
 // ── Game Data ─────────────────────────────────────────────────────────────────
 const ROUNDS_DATA: RoundConfig[] = [
   {
@@ -71,13 +77,15 @@ const ROUNDS_DATA: RoundConfig[] = [
     textColor: "#4a8",
     tip: "Zombies move slow and look pale. High weights on Skin + Walk should work!",
     chars: [
+      // Zombies always share the same features (pale skin, slow walk, cold body temp)
       { x: 0.09, y: 0.22, t: "z", f: { s: 1, w: 1, b: 1 } },
-      { x: 0.2, y: 0.28, t: "z", f: { s: 1, w: 1, b: 0 } },
+      { x: 0.2, y: 0.28, t: "z", f: { s: 1, w: 1, b: 1 } },
       { x: 0.07, y: 0.52, t: "z", f: { s: 1, w: 1, b: 1 } },
-      { x: 0.18, y: 0.6, t: "z", f: { s: 0, w: 1, b: 1 } },
+      { x: 0.18, y: 0.6, t: "z", f: { s: 1, w: 1, b: 1 } },
       { x: 0.65, y: 0.18, t: "h", f: { s: 0, w: 0, b: 0 } },
       { x: 0.78, y: 0.24, t: "h", f: { s: 0, w: 0, b: 0 } },
-      { x: 0.68, y: 0.46, t: "h", f: { s: 1, w: 0, b: 0 } },
+      // Round 1: humans are never pale, always fast, always warm.
+      { x: 0.68, y: 0.46, t: "h", f: { s: 0, w: 0, b: 0 } },
       { x: 0.8, y: 0.52, t: "h", f: { s: 0, w: 0, b: 0 } }
     ]
   },
@@ -88,14 +96,16 @@ const ROUNDS_DATA: RoundConfig[] = [
     textColor: "#fa0",
     tip: "Some humans look suspicious! Body temperature is your secret weapon here.",
     chars: [
+      // Zombies always share the same features (pale skin, slow walk, cold body temp)
       { x: 0.09, y: 0.2, t: "z", f: { s: 1, w: 1, b: 1 } },
-      { x: 0.2, y: 0.35, t: "z", f: { s: 0, w: 1, b: 1 } },
-      { x: 0.07, y: 0.55, t: "z", f: { s: 1, w: 0, b: 1 } },
-      { x: 0.18, y: 0.7, t: "z", f: { s: 0, w: 0, b: 1 } },
-      { x: 0.65, y: 0.18, t: "h", f: { s: 1, w: 1, b: 0 } },
+      { x: 0.2, y: 0.35, t: "z", f: { s: 1, w: 1, b: 1 } },
+      { x: 0.07, y: 0.55, t: "z", f: { s: 1, w: 1, b: 1 } },
+      { x: 0.18, y: 0.7, t: "z", f: { s: 1, w: 1, b: 1 } },
+      // Round 2: some humans are pale, but ALL humans are warm + fast.
+      { x: 0.65, y: 0.18, t: "h", f: { s: 1, w: 0, b: 0 } },
       { x: 0.78, y: 0.28, t: "h", f: { s: 0, w: 0, b: 0 } },
       { x: 0.68, y: 0.5, t: "h", f: { s: 1, w: 0, b: 0 } },
-      { x: 0.8, y: 0.6, t: "h", f: { s: 0, w: 1, b: 0 } },
+      { x: 0.8, y: 0.6, t: "h", f: { s: 1, w: 0, b: 0 } },
       { x: 0.72, y: 0.75, t: "h", f: { s: 0, w: 0, b: 0 } }
     ]
   },
@@ -106,16 +116,19 @@ const ROUNDS_DATA: RoundConfig[] = [
     textColor: "#f55",
     tip: "Maximum chaos! Doctors look cold, patients shuffle. Trust body temp!",
     chars: [
-      { x: 0.08, y: 0.18, t: "z", f: { s: 0, w: 1, b: 1 } },
-      { x: 0.19, y: 0.3, t: "z", f: { s: 1, w: 0, b: 1 } },
-      { x: 0.06, y: 0.5, t: "z", f: { s: 1, w: 1, b: 0 } },
-      { x: 0.17, y: 0.65, t: "z", f: { s: 0, w: 0, b: 1 } },
+      // Round 3: zombies are ALWAYS cold, but skin/speed may differ slightly.
+      { x: 0.08, y: 0.18, t: "z", f: { s: 1, w: 1, b: 1 } },
+      { x: 0.19, y: 0.3, t: "z", f: { s: 0, w: 1, b: 1 } }, // not pale zombie
+      { x: 0.06, y: 0.5, t: "z", f: { s: 1, w: 0, b: 1 } }, // faster zombie
+      { x: 0.17, y: 0.65, t: "z", f: { s: 1, w: 1, b: 1 } },
       { x: 0.22, y: 0.8, t: "z", f: { s: 1, w: 1, b: 1 } },
-      { x: 0.65, y: 0.15, t: "h", f: { s: 1, w: 1, b: 0 } },
-      { x: 0.78, y: 0.22, t: "h", f: { s: 0, w: 1, b: 0 } },
-      { x: 0.68, y: 0.45, t: "h", f: { s: 1, w: 0, b: 0 } },
-      { x: 0.8, y: 0.55, t: "h", f: { s: 0, w: 0, b: 0 } },
-      { x: 0.72, y: 0.72, t: "h", f: { s: 1, w: 1, b: 0 } }
+      // Round 3: humans become messy — some are pale, some are cold, some are slow.
+      // Keep some unchanged humans too.
+      { x: 0.65, y: 0.15, t: "h", f: { s: 1, w: 0, b: 0 } }, // pale human
+      { x: 0.78, y: 0.22, t: "h", f: { s: 0, w: 0, b: 1 } }, // cold human
+      { x: 0.68, y: 0.45, t: "h", f: { s: 0, w: 1, b: 0 } }, // slow human
+      { x: 0.8, y: 0.55, t: "h", f: { s: 0, w: 0, b: 0 } }, // normal human
+      { x: 0.72, y: 0.72, t: "h", f: { s: 0, w: 0, b: 0 } } // normal human
     ]
   }
 ];
@@ -617,48 +630,127 @@ function GameCanvas({
     phaseRef.current = "running";
     const w = weights;
     const targets = charsRef.current.filter((c) => c.type !== "r");
-    let i = 0;
-    const iv = window.setInterval(() => {
-      if (i >= targets.length) {
-        window.clearInterval(iv);
-        window.setTimeout(() => {
-          let correct = 0;
-          let missed = 0;
-          let wrong = 0;
-          targets.forEach((c) => {
-            if (c.state === "eliminated" || c.state === "saved") correct += 1;
-            else if (c.state === "alive") missed += 1;
-            else if (c.state === "wrongly-hit") wrong += 1;
-          });
-          const acc = Math.round((correct / targets.length) * 100);
-          const score = Math.max(0, correct * 10 - missed * 15 - wrong * 15);
-          phaseRef.current = "done";
-          onEvent({ correct, missed, wrong, acc, score });
-        }, 700);
-        return;
-      }
-      const c = targets[i];
-      const max = w.s + w.w + w.b || 1;
-      const raw =
-        (c.f?.s ?? 0) * w.s +
-        (c.f?.w ?? 0) * w.w +
-        (c.f?.b ?? 0) * w.b;
-      const sc = (raw / max) * 10;
-      c.state =
-        sc >= 5
+    const byId = new Map<number, CanvasChar>();
+    targets.forEach((c) => {
+      if (typeof c.id === "number") byId.set(c.id, c);
+    });
+
+    const runLocalRule = () => {
+      let i = 0;
+      const iv = window.setInterval(() => {
+        if (i >= targets.length) {
+          window.clearInterval(iv);
+          window.setTimeout(() => {
+            let correct = 0;
+            let missed = 0;
+            let wrong = 0;
+            targets.forEach((c) => {
+              if (c.state === "eliminated" || c.state === "saved") correct += 1;
+              else if (c.state === "alive") missed += 1;
+              else if (c.state === "wrongly-hit") wrong += 1;
+            });
+            const acc = Math.round((correct / targets.length) * 100);
+            const score = Math.max(0, correct * 10 - missed * 15 - wrong * 15);
+            phaseRef.current = "done";
+            onEvent({ correct, missed, wrong, acc, score });
+          }, 700);
+          return;
+        }
+        const c = targets[i];
+        const max = w.s + w.w + w.b || 1;
+        const raw =
+          (c.f?.s ?? 0) * w.s +
+          (c.f?.w ?? 0) * w.w +
+          (c.f?.b ?? 0) * w.b;
+        const sc = (raw / max) * 10;
+        c.state =
+          sc >= 5
+            ? c.type === "z"
+              ? "eliminated"
+              : "wrongly-hit"
+            : c.type === "h"
+            ? "saved"
+            : "alive";
+        c.flash = 1;
+        const fl = window.setInterval(() => {
+          c.flash = Math.max(0, c.flash - 0.12);
+          if (c.flash <= 0) window.clearInterval(fl);
+        }, 40);
+        i += 1;
+      }, 280);
+    };
+
+    const runFromPredictions = (items: PredictItem[]) => {
+      // Keep the same dramatic step-by-step elimination animation, but source the
+      // decision from the backend model.
+      let i = 0;
+      const iv = window.setInterval(() => {
+        if (i >= targets.length) {
+          window.clearInterval(iv);
+          window.setTimeout(() => {
+            let correct = 0;
+            let missed = 0;
+            let wrong = 0;
+            targets.forEach((c) => {
+              if (c.state === "eliminated" || c.state === "saved") correct += 1;
+              else if (c.state === "alive") missed += 1;
+              else if (c.state === "wrongly-hit") wrong += 1;
+            });
+            const acc = Math.round((correct / targets.length) * 100);
+            const score = Math.max(0, correct * 10 - missed * 15 - wrong * 15);
+            phaseRef.current = "done";
+            onEvent({ correct, missed, wrong, acc, score });
+          }, 700);
+          return;
+        }
+        const c = targets[i];
+        const pred = typeof c.id === "number" ? items.find((it) => it.id === c.id) : undefined;
+        const isZombie = pred ? pred.label === "zombie" : false;
+        c.state = isZombie
           ? c.type === "z"
             ? "eliminated"
             : "wrongly-hit"
           : c.type === "h"
           ? "saved"
           : "alive";
-      c.flash = 1;
-      const fl = window.setInterval(() => {
-        c.flash = Math.max(0, c.flash - 0.12);
-        if (c.flash <= 0) window.clearInterval(fl);
-      }, 40);
-      i += 1;
-    }, 280);
+        c.flash = 1;
+        const fl = window.setInterval(() => {
+          c.flash = Math.max(0, c.flash - 0.12);
+          if (c.flash <= 0) window.clearInterval(fl);
+        }, 40);
+        i += 1;
+      }, 280);
+    };
+
+    // Ask backend model first; fall back to local rule if backend isn't running.
+    (async () => {
+      try {
+        const resp = await fetch(`${AI_BACKEND_URL}/predict`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            weights: w,
+            samples: targets.map((c) => ({
+              id: c.id,
+              f: { s: c.f?.s ?? 0, w: c.f?.w ?? 0, b: c.f?.b ?? 0 }
+            }))
+          })
+        });
+        if (!resp.ok) throw new Error(`predict failed: ${resp.status}`);
+        const data = (await resp.json()) as PredictResponse;
+        // Validate minimally and apply.
+        const items = Array.isArray(data.items) ? data.items : [];
+        // Ensure any missing ids won't crash the animation.
+        items.forEach((it) => {
+          if (typeof it.id === "number" && byId.has(it.id)) {
+            // ok
+          }
+        });
+        runFromPredictions(items);
+      } catch {
+        runLocalRule();
+      }
+    })();
   };
 
   const rd = ROUNDS_DATA[round];
@@ -923,7 +1015,7 @@ function GameCanvas({
                   display: "flex",
                   justifyContent: "space-between",
                   fontSize: 10,
-                  color: "#aaa",
+                  color: "#d6d6d6",
                   marginTop: 2
                 }}
               >
@@ -1356,6 +1448,7 @@ const ZombieGame: React.FC = () => {
   const [avatar, setAvatar] = useState<AvatarId | null>(null);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [round, setRound] = useState(0);
+  const [roundRunKey, setRoundRunKey] = useState(0);
   const [narrLine, setNarrLine] = useState(0);
   const [narrDone, setNarrDone] = useState(false);
   const [weights, setWeights] = useState<Weights>({ s: 7, w: 4, b: 5 });
@@ -1372,6 +1465,22 @@ const ZombieGame: React.FC = () => {
   useEffect(() => {
     loadLB().then(setLeaderboard);
   }, []);
+
+  const skipIntroToGame = () => {
+    // Ensure required player fields are non-empty so the HUD looks sensible.
+    if (!avatar) setAvatar("scout");
+    if (!name.trim()) setName("Cadet");
+    if (!age.trim()) setAge("12");
+    setNameErr("");
+    setRound(0);
+    setNarrLine(0);
+    setNarrDone(false);
+    setRoundScores([]);
+    setRoundResult(null);
+    setWeights({ s: 7, w: 4, b: 5 });
+    setRoundRunKey((k) => k + 1);
+    setScreen("game");
+  };
 
   const handleStart = () => {
     if (!avatar) {
@@ -1406,6 +1515,8 @@ const ZombieGame: React.FC = () => {
       setNarrLine((l) => l + 1);
       setNarrDone(false);
     } else {
+      // Starting the round: reset the round instance so characters respawn.
+      setRoundRunKey((k) => k + 1);
       setScreen("game");
     }
   };
@@ -1483,6 +1594,16 @@ const ZombieGame: React.FC = () => {
     }
   };
 
+  const handleReplayRound = () => {
+    // Replay the current round (stay on same round index).
+    setRoundResult(null);
+    setShowLeaderboardOverlay(false);
+    roundGameStartRef.current = null;
+    setGameTimerMs(0);
+    setRoundRunKey((k) => k + 1);
+    setScreen("game");
+  };
+
   const restart = () => {
     setScreen("intro");
     setName("");
@@ -1507,6 +1628,7 @@ const ZombieGame: React.FC = () => {
       <div
         style={{
           ...S,
+          background: "#050a1a",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
@@ -1515,6 +1637,25 @@ const ZombieGame: React.FC = () => {
         }}
       >
         <style>{`@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}`}</style>
+        <button
+          type="button"
+          onClick={skipIntroToGame}
+          style={{
+            position: "fixed",
+            top: 12,
+            right: 12,
+            background: "transparent",
+            border: "1px solid #222",
+            color: "#d6d6d6",
+            padding: "8px 12px",
+            borderRadius: 10,
+            cursor: "pointer",
+            fontSize: 12,
+            fontFamily: "'Courier New',monospace"
+          }}
+        >
+          Skip intro →
+        </button>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div style={{ fontSize: 52, marginBottom: 8 }}>🧟</div>
           <div
@@ -1530,7 +1671,7 @@ const ZombieGame: React.FC = () => {
           <div
             style={{
               fontSize: 11,
-              color: "#444",
+              color: "#d6d6d6",
               letterSpacing: 5,
               marginTop: 4
             }}
@@ -1550,7 +1691,7 @@ const ZombieGame: React.FC = () => {
         >
           <div
             style={{
-              color: "#555",
+              color: "#d6d6d6",
               fontSize: 12,
               lineHeight: 1.8,
               marginBottom: 20
@@ -1621,7 +1762,7 @@ const ZombieGame: React.FC = () => {
                 ? "Engineer Bot"
                 : "Tap to choose your bot"}
             </div>
-            <div style={{ color: "#777", fontSize: 10 }}>
+            <div style={{ color: "#d6d6d6", fontSize: 10 }}>
               Avatar
             </div>
             {showAvatarPicker && (
@@ -1672,7 +1813,7 @@ const ZombieGame: React.FC = () => {
                       <div
                         style={{
                           fontSize: 9,
-                          color: isSelected ? "#ffdd88" : "#777"
+                          color: isSelected ? "#ffdd88" : "#d6d6d6"
                         }}
                       >
                         {opt.label}
@@ -1686,7 +1827,7 @@ const ZombieGame: React.FC = () => {
           <div style={{ marginBottom: 14 }}>
             <div
               style={{
-                color: "#555",
+                color: "#d6d6d6",
                 fontSize: 11,
                 letterSpacing: 1,
                 marginBottom: 6
@@ -1717,7 +1858,7 @@ const ZombieGame: React.FC = () => {
           <div style={{ marginBottom: 18 }}>
             <div
               style={{
-                color: "#555",
+                color: "#d6d6d6",
                 fontSize: 11,
                 letterSpacing: 1,
                 marginBottom: 6
@@ -1785,7 +1926,7 @@ const ZombieGame: React.FC = () => {
               marginTop: 14,
               background: "transparent",
               border: "1px solid #222",
-              color: "#555",
+              color: "#d6d6d6",
               padding: "8px 20px",
               borderRadius: 8,
               cursor: "pointer",
@@ -1831,9 +1972,25 @@ const ZombieGame: React.FC = () => {
           >
             ZOMBIE AI ACADEMY
           </div>
-          <div style={{ color: "#444", fontSize: 11 }}>
+          <div style={{ color: "#d6d6d6", fontSize: 11 }}>
             Round {round + 1}/3 — {rd.name}
           </div>
+          <button
+            type="button"
+            onClick={() => setScreen("game")}
+            style={{
+              background: "transparent",
+              border: "1px solid #222",
+              color: "#d6d6d6",
+              padding: "6px 10px",
+              borderRadius: 10,
+              cursor: "pointer",
+              fontSize: 11,
+              fontFamily: "'Courier New',monospace"
+            }}
+          >
+            Skip intro →
+          </button>
         </div>
         <div
           style={{
@@ -1849,7 +2006,7 @@ const ZombieGame: React.FC = () => {
           <div
             style={{
               fontSize: 11,
-              color: "#333",
+              color: "#d6d6d6",
               letterSpacing: 3
             }}
           >
@@ -1993,6 +2150,7 @@ const ZombieGame: React.FC = () => {
       <div style={S}>
         <style>{`@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}`}</style>
         <GameCanvas
+          key={`${round}-${roundRunKey}`}
           round={round}
           weights={weights}
           onEvent={handleGameEvent}
@@ -2050,7 +2208,7 @@ const ZombieGame: React.FC = () => {
                     background: "transparent",
                     border: "1px solid #444",
                     borderRadius: 999,
-                    color: "#aaa",
+                    color: "#d6d6d6",
                     fontSize: 11,
                     padding: "4px 10px",
                     cursor: "pointer"
@@ -2072,7 +2230,7 @@ const ZombieGame: React.FC = () => {
                 >
                   <div
                     style={{
-                      color: "#888",
+                      color: "#d6d6d6",
                       fontSize: 11,
                       marginBottom: 4
                     }}
@@ -2105,7 +2263,7 @@ const ZombieGame: React.FC = () => {
 
               <div
                 style={{
-                  color: "#666",
+                  color: "#d6d6d6",
                   fontSize: 10,
                   letterSpacing: 2,
                   marginBottom: 6
@@ -2116,7 +2274,7 @@ const ZombieGame: React.FC = () => {
               {leaderboard.length === 0 ? (
                 <div
                   style={{
-                    color: "#444",
+                    color: "#d6d6d6",
                     fontSize: 12,
                     textAlign: "center",
                     padding: 16
@@ -2150,7 +2308,7 @@ const ZombieGame: React.FC = () => {
                           width: 26,
                           textAlign: "center",
                           fontSize: 14,
-                          color: "#777"
+                          color: "#d6d6d6"
                         }}
                       >
                         {medal}
@@ -2167,7 +2325,7 @@ const ZombieGame: React.FC = () => {
                         </div>
                         <div
                           style={{
-                            color: "#666",
+                            color: "#d6d6d6",
                             fontSize: 10
                           }}
                         >
@@ -2216,7 +2374,7 @@ const ZombieGame: React.FC = () => {
           <div style={{ fontSize: 20, color: "#fff", fontWeight: "bold" }}>
             Round {round + 1} Complete!
           </div>
-          <div style={{ color: "#444", fontSize: 11, marginTop: 4 }}>
+          <div style={{ color: "#d6d6d6", fontSize: 11, marginTop: 4 }}>
             {ROUNDS_DATA[round].name}
           </div>
         </div>
@@ -2266,7 +2424,7 @@ const ZombieGame: React.FC = () => {
                 <div
                   style={{
                     fontSize: 10,
-                    color: "#444",
+                    color: "#d6d6d6",
                     marginTop: 3
                   }}
                 >
@@ -2291,7 +2449,7 @@ const ZombieGame: React.FC = () => {
                 marginBottom: 5
               }}
             >
-              <span style={{ color: "#555", fontSize: 12 }}>Accuracy</span>
+            <span style={{ color: "#d6d6d6", fontSize: 12 }}>Accuracy</span>
               <span style={{ color: accCol, fontWeight: "bold" }}>
                 {roundResult.acc}%
               </span>
@@ -2321,7 +2479,7 @@ const ZombieGame: React.FC = () => {
               alignItems: "center"
             }}
           >
-            <span style={{ color: "#555", fontSize: 13 }}>Round score</span>
+            <span style={{ color: "#d6d6d6", fontSize: 13 }}>Round score</span>
             <span
               style={{
                 color: "#ff9900",
@@ -2364,25 +2522,44 @@ const ZombieGame: React.FC = () => {
             {lesson}
           </div>
         </div>
-        <button
-          onClick={handleNextRound}
-          style={{
-            padding: "12px 40px",
-            background: "#cc2200",
-            color: "#fff",
-            border: "none",
-            borderRadius: 8,
-            fontSize: 14,
-            fontWeight: "bold",
-            cursor: "pointer",
-            fontFamily: "'Courier New',monospace",
-            letterSpacing: 1
-          }}
-        >
-          {round < 2
-            ? `Next: ${ROUNDS_DATA[round + 1].name} →`
-            : "See Leaderboard 🏆"}
-        </button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={handleReplayRound}
+            style={{
+              padding: "12px 22px",
+              background: "transparent",
+              color: "#fff",
+              border: "1px solid #333",
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: "bold",
+              cursor: "pointer",
+              fontFamily: "'Courier New',monospace",
+              letterSpacing: 1
+            }}
+          >
+            Replay ↺
+          </button>
+          <button
+            onClick={handleNextRound}
+            style={{
+              padding: "12px 40px",
+              background: "#cc2200",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: "bold",
+              cursor: "pointer",
+              fontFamily: "'Courier New',monospace",
+              letterSpacing: 1
+            }}
+          >
+            {round < 2
+              ? `Next: ${ROUNDS_DATA[round + 1].name} →`
+              : "See Leaderboard 🏆"}
+          </button>
+        </div>
       </div>
     );
   }
@@ -2422,7 +2599,7 @@ const ZombieGame: React.FC = () => {
           </div>
           <div
             style={{
-              color: "#333",
+              color: "#d6d6d6",
               fontSize: 10,
               marginTop: 3,
               letterSpacing: 3
@@ -2504,7 +2681,7 @@ const ZombieGame: React.FC = () => {
                     <div
                       style={{
                         fontSize: 9,
-                        color: "#333",
+                        color: "#d6d6d6",
                         marginTop: 3
                       }}
                     >
@@ -2530,10 +2707,10 @@ const ZombieGame: React.FC = () => {
                     {"⭐".repeat(r.acc >= 80 ? 3 : r.acc >= 60 ? 2 : 1)}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ color: "#bbb", fontSize: 12 }}>
+                    <div style={{ color: "#d6d6d6", fontSize: 12 }}>
                       {ROUNDS_DATA[i].name}
                     </div>
-                    <div style={{ color: "#444", fontSize: 10 }}>
+                    <div style={{ color: "#d6d6d6", fontSize: 10 }}>
                       Accuracy: {r.acc}%
                     </div>
                   </div>
@@ -2552,7 +2729,7 @@ const ZombieGame: React.FC = () => {
           )}
           <div
             style={{
-              color: "#333",
+              color: "#d6d6d6",
               fontSize: 10,
               letterSpacing: 2,
               marginBottom: 9
@@ -2597,7 +2774,7 @@ const ZombieGame: React.FC = () => {
                       width: 26,
                       textAlign: "center",
                       fontSize: i < 3 ? 15 : 12,
-                      color: "#555",
+                      color: "#d6d6d6",
                       fontWeight: "bold"
                     }}
                   >
@@ -2606,7 +2783,7 @@ const ZombieGame: React.FC = () => {
                   <div style={{ flex: 1 }}>
                     <div
                       style={{
-                        color: isMe ? "#ff9900" : "#bbb",
+                        color: isMe ? "#ff9900" : "#d6d6d6",
                         fontSize: 13,
                         fontWeight: isMe ? "bold" : "normal"
                       }}
@@ -2616,7 +2793,7 @@ const ZombieGame: React.FC = () => {
                     </div>
                     <div
                       style={{
-                        color: "#333",
+                        color: "#d6d6d6",
                         fontSize: 10
                       }}
                     >
