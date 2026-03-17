@@ -1467,8 +1467,7 @@ const ZombieGame: React.FC = () => {
         body: JSON.stringify({ playerId: pid, avatar })
       });
       setSessionId(sData.sessionId as string);
-    } catch (error) {
-      console.error("Failed to create player/session", error);
+    } catch {
     }
     setScreen("tutorial");
   };
@@ -1561,13 +1560,7 @@ const ZombieGame: React.FC = () => {
               botUsed: avatar || "scout"
             })
           });
-          console.log("Round saved to backend", {
-            roundNumber: round + 1,
-            timingMs: Math.round(roundGameDurations[round] ?? gameTimerMs),
-            weights
-          });
-        } catch (error) {
-          console.error("Failed to save round", error);
+        } catch {
         }
       })();
     }
@@ -1688,14 +1681,6 @@ const ZombieGame: React.FC = () => {
             q6_confidence: ansQ6
           })
         });
-        console.log("Survey saved to backend", {
-          q1: ansQ1,
-          q2: ansQ2,
-          q3: ansQ3,
-          q4: ansQ4,
-          q5: ansQ5,
-          q6: ansQ6
-        });
         await fetchJsonOrThrow(`${API_BASE}/api/session/${sid}/finish`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1709,8 +1694,7 @@ const ZombieGame: React.FC = () => {
           return;
         }
       }
-    } catch (error) {
-      console.error("Failed to save survey/final score", error);
+    } catch {
     }
     const entry: LeaderboardEntry = {
       name,
