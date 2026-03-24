@@ -58,7 +58,6 @@ def _player_payload(row: Dict[str, Any]) -> Dict[str, Any]:
   return {
     "id": row["player_id"],
     "name": row["name"],
-    "age": row["age"],
     "avatar": row["avatar"],
     "createdAt": _serialize(row["created_at"]),
     "updatedAt": _serialize(row["updated_at"]),
@@ -68,7 +67,6 @@ def _player_payload(row: Dict[str, Any]) -> Dict[str, Any]:
 def _leaderboard_payload(row: Dict[str, Any]) -> Dict[str, Any]:
   return {
     "name": row["name"],
-    "age": row["age"],
     "score": int(row["score"]),
     "acc": int(row["acc"]),
     "date": row["date"],
@@ -265,7 +263,7 @@ def get_leaderboard():
     with conn.cursor() as cur:
       cur.execute(
         """
-        SELECT session_id, player_id, name, age, avatar, score, acc, date
+        SELECT session_id, player_id, name, avatar, score, acc, date
         FROM leaderboard
         ORDER BY score DESC, acc DESC, created_at ASC
         LIMIT %s
@@ -352,7 +350,10 @@ def get_session_survey(session_id: str):
       "q3_weights_affect_fairness": row["q3_weights_affect_fairness"],
       "q4_ai_label_group": row["q4_ai_label_group"],
       "q5_weight_definition": row["q5_weight_definition"],
-      "q6_confidence": int(row["q6_confidence"]),
+      "q6_confidence": ""
+      if row["q6_confidence"] is None
+      else str(row["q6_confidence"]),
+      "q7_decision_confidence": int(row["q7_decision_confidence"] or 0),
       "submittedAt": _serialize(row["submitted_at"]),
     }
   )
@@ -362,18 +363,10 @@ def get_session_survey(session_id: str):
 def create_player():
   data = request.get_json(force=True, silent=True) or {}
   name = (data.get("name") or "").strip()
-  age = data.get("age")
   avatar = data.get("avatar") or "scout"
 
   if not name:
     return jsonify({"error": "name is required"}), 400
-  if age in (None, ""):
-    age_val = 0
-  else:
-    try:
-      age_val = int(age)
-    except (TypeError, ValueError):
-      age_val = 0
   if avatar not in VALID_AVATARS:
     return jsonify({"error": "invalid avatar"}), 400
 
@@ -383,16 +376,15 @@ def create_player():
     with conn.cursor() as cur:
       cur.execute(
         """
-        INSERT INTO players (player_id, name, age, avatar, created_at, updated_at)
-        VALUES (%s, %s, %s, %s, NOW(), NOW())
+        INSERT INTO players (player_id, name, avatar, created_at, updated_at)
+        VALUES (%s, %s, %s, NOW(), NOW())
         ON CONFLICT (player_id) DO UPDATE
         SET name = EXCLUDED.name,
-            age = EXCLUDED.age,
             avatar = EXCLUDED.avatar,
             updated_at = NOW()
         RETURNING *
         """,
-        (player_id, name, age_val, avatar),
+        (player_id, name, avatar),
       )
       row = cur.fetchone()
 
@@ -547,7 +539,7 @@ def finish_session(session_id: str):
 
       cur.execute(
         """
-        SELECT p.player_id, p.name, p.age, s.avatar
+        SELECT p.player_id, p.name, s.avatar
         FROM sessions s
         JOIN players p ON p.player_id = s.player_id
         WHERE s.session_id = %s
@@ -560,24 +552,22 @@ def finish_session(session_id: str):
       cur.execute(
         """
         INSERT INTO leaderboard (
-          session_id, player_id, name, age, avatar, score, acc, date, created_at
+          session_id, player_id, name, avatar, score, acc, date, created_at
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+        VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
         ON CONFLICT (session_id) DO UPDATE
         SET player_id = EXCLUDED.player_id,
             name = EXCLUDED.name,
-            age = EXCLUDED.age,
             avatar = EXCLUDED.avatar,
             score = EXCLUDED.score,
             acc = EXCLUDED.acc,
             date = EXCLUDED.date
-        RETURNING session_id, player_id, name, age, avatar, score, acc, date
+        RETURNING session_id, player_id, name, avatar, score, acc, date
         """,
         (
           session_id,
           player_row["player_id"],
           player_row["name"],
-          str(player_row["age"]),
           player_row["avatar"],
           total_score,
           avg_accuracy,
@@ -592,9 +582,20 @@ def finish_session(session_id: str):
 @app.post("/api/session/<session_id>/survey")
 def save_survey(session_id: str):
   data: Dict[str, Any] = request.get_json(force=True, silent=True) or {}
-  q6_confidence = int(data.get("q6_confidence") or 0)
-  if q6_confidence < 1 or q6_confidence > 10:
-    return jsonify({"error": "q6_confidence must be between 1 and 10"}), 400
+  raw_q6 = data.get("q6_confidence")
+  if isinstance(raw_q6, (int, float)):
+    q6_text = str(int(raw_q6))
+  elif raw_q6 is None:
+    q6_text = ""
+  else:
+    q6_text = str(raw_q6).strip()
+
+  try:
+    q7_conf = int(data.get("q7_decision_confidence"))
+  except (TypeError, ValueError):
+    q7_conf = 0
+  if q7_conf < 1 or q7_conf > 10:
+    return jsonify({"error": "q7_decision_confidence must be between 1 and 10"}), 400
 
   with get_db() as conn:
     with conn.cursor() as cur:
@@ -632,7 +633,7 @@ def save_survey(session_id: str):
           data.get("q3_weights_affect_fairness") or "",
           data.get("q4_ai_label_group") or "",
           data.get("q5_weight_definition") or "",
-          q6_confidence,
+          q6_text,
         ),
       )
 

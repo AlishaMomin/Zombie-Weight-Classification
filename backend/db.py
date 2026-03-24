@@ -45,7 +45,6 @@ def _ensure_schema(conn) -> None:
         CREATE TABLE IF NOT EXISTS players (
           player_id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
-          age INTEGER NOT NULL,
           avatar TEXT NOT NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -84,7 +83,8 @@ def _ensure_schema(conn) -> None:
           q3_weights_affect_fairness TEXT NOT NULL DEFAULT '',
           q4_ai_label_group TEXT NOT NULL DEFAULT '',
           q5_weight_definition TEXT NOT NULL DEFAULT '',
-          q6_confidence INTEGER NOT NULL DEFAULT 0,
+          q6_confidence TEXT NOT NULL DEFAULT '',
+          q7_decision_confidence INTEGER NOT NULL DEFAULT 0,
           submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
@@ -92,7 +92,6 @@ def _ensure_schema(conn) -> None:
           session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
           player_id TEXT REFERENCES players(player_id) ON DELETE SET NULL,
           name TEXT NOT NULL,
-          age TEXT NOT NULL,
           avatar TEXT,
           score INTEGER NOT NULL DEFAULT 0,
           acc INTEGER NOT NULL DEFAULT 0,
@@ -117,6 +116,31 @@ def _ensure_schema(conn) -> None:
         CREATE INDEX IF NOT EXISTS idx_leaderboard_score ON leaderboard(score DESC, acc DESC);
         """
       )
+      cur.execute(
+        """
+        DO $migrate_q6$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'surveys'
+              AND column_name = 'q6_confidence'
+              AND data_type = 'integer'
+          ) THEN
+            ALTER TABLE surveys ALTER COLUMN q6_confidence DROP DEFAULT;
+            ALTER TABLE surveys
+              ALTER COLUMN q6_confidence TYPE TEXT USING q6_confidence::text;
+            ALTER TABLE surveys ALTER COLUMN q6_confidence SET DEFAULT '';
+          END IF;
+        END
+        $migrate_q6$;
+        """
+      )
+      cur.execute(
+        "ALTER TABLE surveys ADD COLUMN IF NOT EXISTS q7_decision_confidence INTEGER NOT NULL DEFAULT 0"
+      )
+      cur.execute("ALTER TABLE leaderboard DROP COLUMN IF EXISTS age")
+      cur.execute("ALTER TABLE players DROP COLUMN IF EXISTS age")
     conn.commit()
     _schema_ready = True
 

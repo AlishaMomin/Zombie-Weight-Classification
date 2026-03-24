@@ -62,7 +62,6 @@ type GameEvent = EliminationResult | WeightChangeEvent;
 
 type LeaderboardEntry = {
   name: string;
-  age: string;
   score: number;
   acc: number;
   date: string;
@@ -76,7 +75,34 @@ const API_BASE = (
 ).replace(/\/$/, "");
 
 const ASSET_BASE = import.meta.env.BASE_URL;
-const assetUrl = (file: string) => `${ASSET_BASE}${file}`;
+const assetUrl = (file: string) =>
+  `${ASSET_BASE}${file
+    .split("/")
+    .map((seg) => encodeURIComponent(seg))
+    .join("/")}`;
+
+/** Survey Q2: multi-select; ids persisted comma-separated in `q2_weight_fairness`. */
+const SURVEY_Q2_OPTIONS = [
+  {
+    id: "ignore_pandas",
+    label:
+      "Ignore the pandas: Just let the robot keep looking at turtles and hope it eventually figures it out."
+  },
+  {
+    id: "weight_pandas",
+    label:
+      'Give pandas "extra points" (Weight): Tell the robot that finding a panda is 20 times more important than finding a turtle, so it pays extra close attention to them.'
+  },
+  {
+    id: "delete_turtles",
+    label:
+      "Delete the turtle photos: Throw away the turtle pictures so the robot has almost nothing left to study."
+  },
+  {
+    id: "stop_robot",
+    label: "Stop the robot: Turn it off so it doesn't have to learn anything else."
+  }
+] as const;
 
 // ── Game Data ─────────────────────────────────────────────────────────────────
 const ROUNDS_DATA: RoundConfig[] = [
@@ -1453,19 +1479,19 @@ type Screen =
   | "game"
   | "roundResult"
   | "leaderboard"
-  | "survey_q1"   // After Round 1: graph meaning (open text)
+  | "survey_q1"   // After Round 1: cats/dogs/plants group label (MC + image)
   | "survey_q1b"  // After Q1: training intro text
-  | "survey_q2"   // After Round 1: cats/dogs weight fairness (MC)
+  | "survey_q2"   // After Round 1: turtle/panda imbalance (multi-select)
   | "survey_q2b"  // After Q2: "Great job thinking" text
-  | "survey_q3"   // After Round 2: weights affect fairness (MC)
-  | "survey_q4"   // After Round 2: AI label group (MC + image)
-  | "survey_q5"   // After Round 3: weight definition (open text)
-  | "survey_q6";  // After Round 3: confidence scale 1-10
+  | "survey_q3"   // After Round 2: weighted classification & fairness (MC)
+  | "survey_q4"   // After Round 2: self-driving rare class weight (MC)
+  | "survey_q5"   // After Round 3: slider prioritization (image + open text)
+  | "survey_q6"   // After Round 3: explain "weight" to a friend (open text)
+  | "survey_q7";  // After Q6: AI decision confidence (slider 1–10)
 
 const ZombieGame: React.FC = () => {
   const [screen, setScreen] = useState<Screen>("intro");
   const [name, setName] = useState("");
-  const [age, setAge] = useState("");
   const [nameErr, setNameErr] = useState("");
   const [avatar, setAvatar] = useState<AvatarId | null>(null);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
@@ -1487,12 +1513,13 @@ const ZombieGame: React.FC = () => {
   const [lastWeightApiFeature, setLastWeightApiFeature] = useState<
     "skin" | "walk" | "temp" | null
   >(null);
-  const [ansQ1, setAnsQ1] = useState("");
-  const [ansQ2, setAnsQ2] = useState<string | null>(null);
+  const [ansQ1, setAnsQ1] = useState<string | null>(null);
+  const [ansQ2, setAnsQ2] = useState<string[]>([]);
   const [ansQ3, setAnsQ3] = useState<string | null>(null);
   const [ansQ4, setAnsQ4] = useState<string | null>(null);
   const [ansQ5, setAnsQ5] = useState("");
-  const [ansQ6, setAnsQ6] = useState<number>(5);
+  const [ansQ6, setAnsQ6] = useState("");
+  const [ansQ7, setAnsQ7] = useState(5);
   const [surveyError, setSurveyError] = useState("");
 
   useEffect(() => {
@@ -1546,8 +1573,6 @@ const ZombieGame: React.FC = () => {
       setNameErr("Please enter your name!");
       return;
     }
-    const parsedAge = Number(age);
-    const ageNum = age.trim() === "" || Number.isNaN(parsedAge) ? 0 : parsedAge;
     setNameErr("");
     setRound(0);
     setNarrLine(0);
@@ -1555,14 +1580,14 @@ const ZombieGame: React.FC = () => {
     setRoundScores([]);
     setRoundResult(null);
     setSurveyError("");
-    setAnsQ1(""); setAnsQ2(null); setAnsQ3(null);
-    setAnsQ4(null); setAnsQ5(""); setAnsQ6(5);
+    setAnsQ1(null); setAnsQ2([]); setAnsQ3(null);
+    setAnsQ4(null); setAnsQ5(""); setAnsQ6(""); setAnsQ7(5);
     setLastWeightApiFeature(null);
     try {
       const pData = await fetchJsonOrThrow(`${API_BASE}/api/player`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), age: ageNum, avatar })
+        body: JSON.stringify({ name: name.trim(), avatar })
       });
       const pid = pData.playerId as string;
       setPlayerId(pid);
@@ -1689,7 +1714,6 @@ const ZombieGame: React.FC = () => {
   const restart = () => {
     setScreen("intro");
     setName("");
-    setAge("");
     setRound(0);
     setNarrLine(0);
     setNarrDone(false);
@@ -1700,13 +1724,13 @@ const ZombieGame: React.FC = () => {
     setPlayerId(null);
     setSessionId(null);
     setSurveyError("");
-    setAnsQ1(""); setAnsQ2(null); setAnsQ3(null);
-    setAnsQ4(null); setAnsQ5(""); setAnsQ6(5);
+    setAnsQ1(null); setAnsQ2([]); setAnsQ3(null);
+    setAnsQ4(null); setAnsQ5(""); setAnsQ6(""); setAnsQ7(5);
   };
 
   const continueQ1 = () => {
-    if (!ansQ1.trim()) {
-      setSurveyError("Please answer this question before continuing.");
+    if (!ansQ1) {
+      setSurveyError("Please select an answer before continuing.");
       return;
     }
     setSurveyError("");
@@ -1719,8 +1743,8 @@ const ZombieGame: React.FC = () => {
   };
 
   const continueQ2 = () => {
-    if (!ansQ2) {
-      setSurveyError("Please select an answer before continuing.");
+    if (ansQ2.length === 0) {
+      setSurveyError("Please select at least one option before continuing.");
       return;
     }
     setSurveyError("");
@@ -1765,7 +1789,16 @@ const ZombieGame: React.FC = () => {
     setScreen("survey_q6");
   };
 
-  const continueQ6 = async () => {
+  const continueQ6 = () => {
+    if (!ansQ6.trim()) {
+      setSurveyError("Please answer this question before continuing.");
+      return;
+    }
+    setSurveyError("");
+    setScreen("survey_q7");
+  };
+
+  const continueQ7 = async () => {
     setSurveyError("");
     const scores = roundScores;
     const total = scores.reduce((s, r) => s + r.score, 0);
@@ -1781,11 +1814,12 @@ const ZombieGame: React.FC = () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             q1_graph_meaning: ansQ1,
-            q2_weight_fairness: ansQ2,
+            q2_weight_fairness: [...ansQ2].sort().join(","),
             q3_weights_affect_fairness: ansQ3,
             q4_ai_label_group: ansQ4,
             q5_weight_definition: ansQ5,
-            q6_confidence: ansQ6
+            q6_confidence: ansQ6,
+            q7_decision_confidence: ansQ7
           })
         });
         await fetchJsonOrThrow(`${API_BASE}/api/session/${sid}/finish`, {
@@ -1805,7 +1839,6 @@ const ZombieGame: React.FC = () => {
     }
     const entry: LeaderboardEntry = {
       name,
-      age,
       score: total,
       acc: avgAcc,
       date: new Date().toLocaleDateString()
@@ -2022,37 +2055,6 @@ const ZombieGame: React.FC = () => {
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleStart()}
               placeholder="e.g. Alex"
-              style={{
-                display: "block",
-                width: "100%",
-                padding: "10px 14px",
-                background: "#1a1a1a",
-                border: "1px solid #333",
-                borderRadius: 8,
-                color: "#fff",
-                fontSize: 14,
-                fontFamily: "'Courier New',monospace",
-                outline: "none",
-                boxSizing: "border-box"
-              }}
-            />
-          </div>
-          <div style={{ marginBottom: 18 }}>
-            <div
-              style={{
-                color: "#555",
-                fontSize: 11,
-                letterSpacing: 1,
-                marginBottom: 6
-              }}
-            >
-              YOUR AGE
-            </div>
-            <input
-              value={age}
-              onChange={(e) => setAge(e.target.value)}
-              type="number"
-              placeholder="optional"
               style={{
                 display: "block",
                 width: "100%",
@@ -2565,27 +2567,57 @@ const ZombieGame: React.FC = () => {
     </label>
   );
 
-  // Q1 — After Round 1: graph meaning (open text)
+  const toggleQ2Option = (id: string) => {
+    setAnsQ2((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setSurveyError("");
+  };
+
+  const mcCheckboxOption = (id: string, label: string) => {
+    const on = ansQ2.includes(id);
+    return (
+      <label
+        key={id}
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 10,
+          fontSize: 13,
+          color: on ? "#ffdd88" : "#ccc",
+          marginBottom: 8,
+          cursor: "pointer",
+          background: on ? "#1a1000" : "transparent",
+          borderRadius: 6,
+          padding: "6px 8px",
+          border: on ? "1px solid #ff990044" : "1px solid transparent"
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={on}
+          onChange={() => toggleQ2Option(id)}
+          style={{ accentColor: "#ff9900", marginTop: 3, flexShrink: 0 }}
+        />
+        <span>{label}</span>
+      </label>
+    );
+  };
+
+  // Q1 — After Round 1: AI group label for mixed image (MC)
   if (screen === "survey_q1") {
     return surveyCard(
       1,
-      6,
+      7,
       <>
         <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
-          Great, you just passed the first level! Based on what you just did, can you tell me what this graph means?
+          An AI model is trained to identify and label groups of images. It has been specifically trained on three
+          distinct categories: &ldquo;Cats,&rdquo; &ldquo;Dogs,&rdquo; and &ldquo;Plants.&rdquo; If you provide the AI
+          with the image below, which contains a mixture of all three, what label is it most likely to assign to the
+          entire group?
         </div>
-        <div style={{ background: "#000", borderRadius: 10, padding: 10, border: "1px solid #222", marginBottom: 12, textAlign: "center" }}>
-          <img src={assetUrl("survey-image-2.png")} alt="Graph illustration" style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain" }} />
+        <div style={{ background: "#000", borderRadius: 10, padding: 10, border: "1px solid #222", marginBottom: 14, textAlign: "center" }}>
+          <img src={assetUrl("survey-image-1.png")} alt="Scene with cats, dogs, and plants" style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain" }} />
         </div>
-        <textarea
-          value={ansQ1}
-          onChange={(e) => {
-            setAnsQ1(e.target.value);
-            setSurveyError("");
-          }}
-          placeholder="Type your explanation here..."
-          style={{ width: "100%", minHeight: 90, background: "#0a0a0a", borderRadius: 8, border: "1px solid #333", color: "#eee", padding: "8px 10px", fontFamily: "'Courier New', monospace", fontSize: 13, boxSizing: "border-box", resize: "vertical" }}
-        />
+        {["Cats", "Dogs", "Plants"].map((opt) => mcOption("q1", opt, ansQ1, setAnsQ1))}
         {surveyErrorMsg}
         {continueBtn(continueQ1)}
       </>
@@ -2596,7 +2628,7 @@ const ZombieGame: React.FC = () => {
   if (screen === "survey_q1b") {
     return surveyCard(
       2,
-      6,
+      7,
       <>
         <div style={{ color: "#ccc", fontSize: 14, marginBottom: 12 }}>
           Awesome! The next levels are a bit tricky, so let&apos;s complete some training before we get to it.
@@ -2606,18 +2638,38 @@ const ZombieGame: React.FC = () => {
     );
   }
 
-  // Q2 — After Round 1: cats/dogs weight fairness (MC)
+  // Q2 — After Round 1: turtle/panda class imbalance (multi-select)
   if (screen === "survey_q2") {
     return surveyCard(
       2,
-      6,
+      7,
       <>
-        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 14 }}>
-          If a dataset has 90 cats and 10 dogs, and you wanted both cats and dogs to be equal, which class should likely receive a higher weight in order to make this fair?
+        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 10 }}>
+          The Situation: Imagine you are teaching a robot to recognize animals. You give the robot a big box of photos
+          to study:
         </div>
-        {["Cats", "Dogs", "Both should have equal weight", "Neither should have weight"].map((opt) =>
-          mcOption("q2", opt, ansQ2, setAnsQ2)
-        )}
+        <ul
+          style={{
+            color: "#ccc",
+            fontSize: 14,
+            lineHeight: 1.5,
+            margin: "0 0 14px 0",
+            paddingLeft: 22
+          }}
+        >
+          <li>100 pictures of Turtles 🐢</li>
+          <li>Only 5 pictures of Pandas 🐼</li>
+        </ul>
+        <div style={{ color: "#aaa", fontSize: 13, lineHeight: 1.5, marginBottom: 12 }}>
+          Because there are so many turtles, the robot starts to think everything is a turtle! It keeps missing the
+          pandas because it hasn&apos;t seen them enough.
+        </div>
+        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 8 }}>
+          Question: If you want the robot to become an expert at spotting those 5 pandas, which of these
+          &ldquo;tricks&rdquo; would help the most?
+        </div>
+        <div style={{ color: "#888", fontSize: 12, marginBottom: 10 }}>Select all that apply.</div>
+        {SURVEY_Q2_OPTIONS.map((o) => mcCheckboxOption(o.id, o.label))}
         {surveyErrorMsg}
         {continueBtn(continueQ2)}
       </>
@@ -2628,7 +2680,7 @@ const ZombieGame: React.FC = () => {
   if (screen === "survey_q2b") {
     return surveyCard(
       3,
-      6,
+      7,
       <>
         <div style={{ color: "#ccc", fontSize: 14, marginBottom: 12 }}>
           Great job thinking! On to the next level!!
@@ -2638,20 +2690,20 @@ const ZombieGame: React.FC = () => {
     );
   }
 
-  // Q3 — After Round 2: weights affect fairness (MC)
+  // Q3 — After Round 2: why weighted classification helps fairness (MC)
   if (screen === "survey_q3") {
     return surveyCard(
       3,
-      6,
+      7,
       <>
         <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 14 }}>
-          Wow, that level was a bit challenging, awesome job getting through! But I wonder... how does changing weights affect fairness? Does it?
+          Why does weighted classification help improve fairness in predictions?
         </div>
         {[
-          "Yes, because it allows for customization in feature recognition",
-          "Yes, because it removes some data from the dataset",
-          "No, because it only makes the computer run faster",
-          "No, because it guesses the answers randomly"
+          "It allows for customization in feature recognition",
+          "It removes some data from the dataset",
+          "It makes the computer run faster",
+          "It guesses the answers randomly"
         ].map((opt) => mcOption("q3", opt, ansQ3, setAnsQ3))}
         {surveyErrorMsg}
         {continueBtn(continueQ3)}
@@ -2659,73 +2711,143 @@ const ZombieGame: React.FC = () => {
     );
   }
 
-  // Q4 — After Round 2: AI label group with image (MC)
+  // Q4 — After Round 2: self-driving imbalance — which class needs higher weight (MC)
   if (screen === "survey_q4") {
-    return surveyCard(4, 6, <>
-      <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
-        Now if we were given this group and all weights were equal between cats, dogs, and plants, what would an AI label it?
-      </div>
-      <div style={{ background: "#000", borderRadius: 10, padding: 10, border: "1px solid #222", marginBottom: 14, textAlign: "center" }}>
-        <img src={assetUrl("survey-image-1.png")} alt="Group of animals" style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain" }} />
-      </div>
-      {["Dogs", "Cats", "Plants"].map((opt) => mcOption("q4", opt, ansQ4, setAnsQ4))}
-      {surveyErrorMsg}
-      {continueBtn(continueQ4)}
-    </>);
+    return surveyCard(
+      4,
+      7,
+      <>
+        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 14 }}>
+          Imagine a self-driving car is being trained to recognize objects on the road. The computer sees 1,000 pictures
+          of Empty Roads and only 2 pictures of People Crossing. If we want to make sure the car never misses a person,
+          which class needs a much higher weight?
+        </div>
+        {[
+          "Empty Roads: Because there are more of them, the car should focus on them.",
+          "People Crossing: Because they are rare but much more important to get right.",
+          "Both should be equal: Because all pictures are just pixels to a computer.",
+          "Neither: The car will figure it out on its own without weights."
+        ].map((opt) => mcOption("q4", opt, ansQ4, setAnsQ4))}
+        {surveyErrorMsg}
+        {continueBtn(continueQ4)}
+      </>
+    );
   }
 
-  // Q5 — After Round 3: weight definition (open text)
+  // Q5 — After Round 3: interpret feature-weight sliders (image + open text)
   if (screen === "survey_q5") {
-    return surveyCard(5, 6, <>
-      <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
-        What do you think &ldquo;weight&rdquo; means in AI?
-      </div>
-      <div style={{ color: "#888", fontSize: 12, marginBottom: 10 }}>
-        There is no single correct answer. Write what you think!
-      </div>
-      <textarea
-        value={ansQ5}
-        onChange={(e) => {
-          setAnsQ5(e.target.value);
-          setSurveyError("");
-        }}
-        placeholder="Type your thoughts here..."
-        style={{ width: "100%", minHeight: 100, background: "#0a0a0a", borderRadius: 8, border: "1px solid #333", color: "#eee", padding: "8px 10px", fontFamily: "'Courier New', monospace", fontSize: 13, boxSizing: "border-box", resize: "vertical" }}
-      />
-      {surveyErrorMsg}
-      {continueBtn(continueQ5)}
-    </>);
-  }
-
-  // Q6 — After Round 3: confidence scale 1-10
-  if (screen === "survey_q6") {
-    return surveyCard(6, 6, <>
-      <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
-        How confident are you in understanding how AI makes decisions?
-      </div>
-      <div style={{ color: "#888", fontSize: 12, marginBottom: 16 }}>
-        Scale: 1 = not confident at all &mdash; 10 = very confident. There is no wrong answer.
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-        <span style={{ fontSize: 12, color: "#777" }}>1</span>
-        <input
-          type="range"
-          min={1}
-          max={10}
-          value={ansQ6}
+    return surveyCard(
+      5,
+      7,
+      <>
+        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
+          Based on these sliders, what is this image telling us about how the AI prioritizes information to classify
+          something?
+        </div>
+        <div style={{ background: "#000", borderRadius: 10, padding: 10, border: "1px solid #222", marginBottom: 14, textAlign: "center" }}>
+          <img
+            src={assetUrl("post survey 2.png")}
+            alt="Feature weights: Skin, Walk, and Body Temp sliders with values 7, 4, and 10"
+            style={{ maxWidth: "100%", maxHeight: 260, objectFit: "contain" }}
+          />
+        </div>
+        <textarea
+          value={ansQ5}
           onChange={(e) => {
-            setAnsQ6(Number(e.target.value));
+            setAnsQ5(e.target.value);
             setSurveyError("");
           }}
-          style={{ flex: 1, accentColor: "#ff9900" }}
+          placeholder="Type your answer here..."
+          style={{
+            width: "100%",
+            minHeight: 100,
+            background: "#0a0a0a",
+            borderRadius: 8,
+            border: "1px solid #333",
+            color: "#eee",
+            padding: "8px 10px",
+            fontFamily: "'Courier New', monospace",
+            fontSize: 13,
+            boxSizing: "border-box",
+            resize: "vertical"
+          }}
         />
-        <span style={{ fontSize: 12, color: "#777" }}>10</span>
-      </div>
-      <div style={{ fontSize: 16, color: "#ffcc66", fontWeight: "bold", marginBottom: 20 }}>
-        Your answer: {ansQ6} / 10
-      </div>
-      {continueBtn(continueQ6, "Finish & See Leaderboard \u2192")}
-    </>);
+        {surveyErrorMsg}
+        {continueBtn(continueQ5)}
+      </>
+    );
+  }
+
+  // Q6 — After Round 3: explain weight in AI (open text)
+  if (screen === "survey_q6") {
+    return surveyCard(
+      6,
+      7,
+      <>
+        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 14 }}>
+          If I had to explain to my friend what &lsquo;weight&rsquo; is in AI, I would tell them that it means...
+        </div>
+        <textarea
+          value={ansQ6}
+          onChange={(e) => {
+            setAnsQ6(e.target.value);
+            setSurveyError("");
+          }}
+          placeholder="Type your answer here..."
+          style={{
+            width: "100%",
+            minHeight: 120,
+            background: "#0a0a0a",
+            borderRadius: 8,
+            border: "1px solid #333",
+            color: "#eee",
+            padding: "8px 10px",
+            fontFamily: "'Courier New', monospace",
+            fontSize: 13,
+            boxSizing: "border-box",
+            resize: "vertical"
+          }}
+        />
+        {surveyErrorMsg}
+        {continueBtn(continueQ6)}
+      </>
+    );
+  }
+
+  // Q7 — Confidence in understanding AI decisions (slider 1–10)
+  if (screen === "survey_q7") {
+    return surveyCard(
+      7,
+      7,
+      <>
+        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
+          How confident are you in understanding how AI makes decisions?
+        </div>
+        <div style={{ color: "#888", fontSize: 12, marginBottom: 16 }}>
+          Scale: 1 = not confident at all &mdash; 10 = very confident. There is no wrong answer.
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+          <span style={{ fontSize: 12, color: "#777" }}>1</span>
+          <input
+            type="range"
+            min={1}
+            max={10}
+            value={ansQ7}
+            onChange={(e) => {
+              setAnsQ7(Number(e.target.value));
+              setSurveyError("");
+            }}
+            style={{ flex: 1, accentColor: "#ff9900" }}
+          />
+          <span style={{ fontSize: 12, color: "#777" }}>10</span>
+        </div>
+        <div style={{ fontSize: 16, color: "#ffcc66", fontWeight: "bold", marginBottom: 20 }}>
+          Your answer: {ansQ7} / 10
+        </div>
+        {surveyErrorMsg}
+        {continueBtn(continueQ7, "Finish & See Leaderboard \u2192")}
+      </>
+    );
   }
 
   // GAME
@@ -2912,7 +3034,7 @@ const ZombieGame: React.FC = () => {
                             fontSize: 10
                           }}
                         >
-                          {e.score} pts • {e.acc}% • Age {e.age}
+                          {e.score} pts • {e.acc}%
                         </div>
                       </div>
                     </div>
@@ -3361,7 +3483,7 @@ const ZombieGame: React.FC = () => {
                         fontSize: 10
                       }}
                     >
-                      Age {e.age} · {e.acc}% avg · {e.date}
+                      {e.acc}% avg · {e.date}
                     </div>
                   </div>
                   <div
