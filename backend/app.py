@@ -54,10 +54,17 @@ def handle_psycopg_error(error: psycopg2.Error):
   return jsonify({"error": "Database request failed"}), 500
 
 
+def _display_name_from_player_row(row: Dict[str, Any]) -> str:
+  first = (row.get("name") or "").strip()
+  last = (row.get("last_name") or "").strip()
+  return f"{first} {last}".strip() if last else first
+
+
 def _player_payload(row: Dict[str, Any]) -> Dict[str, Any]:
   return {
     "id": row["player_id"],
     "name": row["name"],
+    "lastName": row.get("last_name") or "",
     "avatar": row["avatar"],
     "createdAt": _serialize(row["created_at"]),
     "updatedAt": _serialize(row["updated_at"]),
@@ -363,10 +370,13 @@ def get_session_survey(session_id: str):
 def create_player():
   data = request.get_json(force=True, silent=True) or {}
   name = (data.get("name") or "").strip()
+  last_name = (data.get("lastName") or data.get("last_name") or "").strip()
   avatar = data.get("avatar") or "scout"
 
   if not name:
     return jsonify({"error": "name is required"}), 400
+  if not last_name:
+    return jsonify({"error": "lastName is required"}), 400
   if avatar not in VALID_AVATARS:
     return jsonify({"error": "invalid avatar"}), 400
 
@@ -376,15 +386,16 @@ def create_player():
     with conn.cursor() as cur:
       cur.execute(
         """
-        INSERT INTO players (player_id, name, avatar, created_at, updated_at)
-        VALUES (%s, %s, %s, NOW(), NOW())
+        INSERT INTO players (player_id, name, last_name, avatar, created_at, updated_at)
+        VALUES (%s, %s, %s, %s, NOW(), NOW())
         ON CONFLICT (player_id) DO UPDATE
         SET name = EXCLUDED.name,
+            last_name = EXCLUDED.last_name,
             avatar = EXCLUDED.avatar,
             updated_at = NOW()
         RETURNING *
         """,
-        (player_id, name, avatar),
+        (player_id, name, last_name, avatar),
       )
       row = cur.fetchone()
 
@@ -539,7 +550,7 @@ def finish_session(session_id: str):
 
       cur.execute(
         """
-        SELECT p.player_id, p.name, s.avatar
+        SELECT p.player_id, p.name, p.last_name, s.avatar
         FROM sessions s
         JOIN players p ON p.player_id = s.player_id
         WHERE s.session_id = %s
@@ -549,6 +560,7 @@ def finish_session(session_id: str):
       player_row = cur.fetchone()
 
       leaderboard_date = _now_utc().date().isoformat()
+      display_name = _display_name_from_player_row(player_row)
       cur.execute(
         """
         INSERT INTO leaderboard (
@@ -567,7 +579,7 @@ def finish_session(session_id: str):
         (
           session_id,
           player_row["player_id"],
-          player_row["name"],
+          display_name,
           player_row["avatar"],
           total_score,
           avg_accuracy,

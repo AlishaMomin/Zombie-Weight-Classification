@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type RawCharType = "z" | "h";
@@ -1491,8 +1491,13 @@ type Screen =
 
 const ZombieGame: React.FC = () => {
   const [screen, setScreen] = useState<Screen>("intro");
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [nameErr, setNameErr] = useState("");
+  const displayName = useMemo(
+    () => `${firstName.trim()} ${lastName.trim()}`.trim(),
+    [firstName, lastName]
+  );
   const [avatar, setAvatar] = useState<AvatarId | null>(null);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [round, setRound] = useState(0);
@@ -1569,8 +1574,12 @@ const ZombieGame: React.FC = () => {
       setNameErr("Please choose your bot avatar!");
       return;
     }
-    if (!name.trim()) {
-      setNameErr("Please enter your name!");
+    if (!firstName.trim()) {
+      setNameErr("Please enter your first name!");
+      return;
+    }
+    if (!lastName.trim()) {
+      setNameErr("Please enter your last name!");
       return;
     }
     setNameErr("");
@@ -1587,7 +1596,11 @@ const ZombieGame: React.FC = () => {
       const pData = await fetchJsonOrThrow(`${API_BASE}/api/player`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), avatar })
+        body: JSON.stringify({
+          name: firstName.trim(),
+          lastName: lastName.trim(),
+          avatar
+        })
       });
       const pid = pData.playerId as string;
       setPlayerId(pid);
@@ -1713,7 +1726,8 @@ const ZombieGame: React.FC = () => {
 
   const restart = () => {
     setScreen("intro");
-    setName("");
+    setFirstName("");
+    setLastName("");
     setRound(0);
     setNarrLine(0);
     setNarrDone(false);
@@ -1838,7 +1852,7 @@ const ZombieGame: React.FC = () => {
     } catch {
     }
     const entry: LeaderboardEntry = {
-      name,
+      name: displayName,
       score: total,
       acc: avgAcc,
       date: new Date().toLocaleDateString()
@@ -2039,6 +2053,40 @@ const ZombieGame: React.FC = () => {
               </div>
             )}
           </div>
+          <div style={{ marginBottom: 12 }}>
+            <div
+              style={{
+                color: "#555",
+                fontSize: 11,
+                letterSpacing: 1,
+                marginBottom: 6
+              }}
+            >
+              FIRST NAME
+            </div>
+            <input
+              value={firstName}
+              onChange={(e) => {
+                setFirstName(e.target.value);
+                setNameErr("");
+              }}
+              onKeyDown={(e) => e.key === "Enter" && handleStart()}
+              placeholder="e.g. Alex"
+              style={{
+                display: "block",
+                width: "100%",
+                padding: "10px 14px",
+                background: "#1a1a1a",
+                border: "1px solid #333",
+                borderRadius: 8,
+                color: "#fff",
+                fontSize: 14,
+                fontFamily: "'Courier New',monospace",
+                outline: "none",
+                boxSizing: "border-box"
+              }}
+            />
+          </div>
           <div style={{ marginBottom: 14 }}>
             <div
               style={{
@@ -2048,13 +2096,16 @@ const ZombieGame: React.FC = () => {
                 marginBottom: 6
               }}
             >
-              YOUR NAME
+              LAST NAME
             </div>
             <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={lastName}
+              onChange={(e) => {
+                setLastName(e.target.value);
+                setNameErr("");
+              }}
               onKeyDown={(e) => e.key === "Enter" && handleStart()}
-              placeholder="e.g. Alex"
+              placeholder="e.g. Rivera"
               style={{
                 display: "block",
                 width: "100%",
@@ -2833,7 +2884,7 @@ const ZombieGame: React.FC = () => {
           round={round}
           weights={weights}
           onEvent={handleGameEvent}
-          playerName={name}
+          playerName={displayName}
           avatar={avatar || "scout"}
           onOpenLeaderboard={() => setShowLeaderboardOverlay(true)}
           onSelectAvatar={(id) => setAvatar(id)}
@@ -2963,7 +3014,7 @@ const ZombieGame: React.FC = () => {
                 </div>
               ) : (
                 leaderboard.slice(0, 5).map((e, i) => {
-                  const isMe = e.name === name;
+                  const isMe = e.name === displayName;
                   const medal =
                     i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`;
                   return (
@@ -3234,7 +3285,8 @@ const ZombieGame: React.FC = () => {
           )
         : 0;
     const myRank =
-      leaderboard.findIndex((e) => e.name === name && e.score === myTotal) + 1;
+      leaderboard.findIndex((e) => e.name === displayName && e.score === myTotal) +
+      1;
 
     return (
       <div style={{ ...S, paddingBottom: "2rem" }}>
@@ -3293,7 +3345,7 @@ const ZombieGame: React.FC = () => {
                   marginBottom: 10
                 }}
               >
-                YOUR PERFORMANCE — {name.toUpperCase()}
+                YOUR PERFORMANCE — {displayName.toUpperCase()}
               </div>
               <div
                 style={{
@@ -3410,7 +3462,7 @@ const ZombieGame: React.FC = () => {
             </div>
           ) : (
             leaderboard.map((e, i) => {
-              const isMe = e.name === name && e.score === myTotal;
+              const isMe = e.name === displayName && e.score === myTotal;
               const medal =
                 i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`;
               return (

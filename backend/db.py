@@ -45,6 +45,7 @@ def _ensure_schema(conn) -> None:
         CREATE TABLE IF NOT EXISTS players (
           player_id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
+          last_name TEXT NOT NULL DEFAULT '',
           avatar TEXT NOT NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -141,6 +142,9 @@ def _ensure_schema(conn) -> None:
       )
       cur.execute("ALTER TABLE leaderboard DROP COLUMN IF EXISTS age")
       cur.execute("ALTER TABLE players DROP COLUMN IF EXISTS age")
+      cur.execute(
+        "ALTER TABLE players ADD COLUMN IF NOT EXISTS last_name TEXT NOT NULL DEFAULT ''"
+      )
     conn.commit()
     _schema_ready = True
 
