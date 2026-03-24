@@ -367,12 +367,13 @@ def create_player():
 
   if not name:
     return jsonify({"error": "name is required"}), 400
-  try:
-    age_val = int(age)
-  except (TypeError, ValueError):
-    return jsonify({"error": "age must be a number"}), 400
-  if age_val < 5 or age_val > 18:
-    return jsonify({"error": "age must be between 5 and 18"}), 400
+  if age in (None, ""):
+    age_val = 0
+  else:
+    try:
+      age_val = int(age)
+    except (TypeError, ValueError):
+      age_val = 0
   if avatar not in VALID_AVATARS:
     return jsonify({"error": "invalid avatar"}), 400
 

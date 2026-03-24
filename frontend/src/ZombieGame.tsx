@@ -1546,11 +1546,8 @@ const ZombieGame: React.FC = () => {
       setNameErr("Please enter your name!");
       return;
     }
-    const ageNum = Number(age);
-    if (!ageNum || ageNum < 5 || ageNum > 18) {
-      setNameErr("Please enter a valid age (5–18)!");
-      return;
-    }
+    const parsedAge = Number(age);
+    const ageNum = age.trim() === "" || Number.isNaN(parsedAge) ? 0 : parsedAge;
     setNameErr("");
     setRound(0);
     setNarrLine(0);
@@ -2055,9 +2052,7 @@ const ZombieGame: React.FC = () => {
               value={age}
               onChange={(e) => setAge(e.target.value)}
               type="number"
-              min={5}
-              max={18}
-              placeholder="e.g. 12"
+              placeholder="optional"
               style={{
                 display: "block",
                 width: "100%",
