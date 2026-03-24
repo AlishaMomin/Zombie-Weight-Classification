@@ -2172,7 +2172,7 @@ const ZombieGame: React.FC = () => {
                 marginBottom: 10
               }}
             >
-              Learn the tool before Round 1
+              Watch before Round 1
             </div>
             <div
               style={{
@@ -2182,8 +2182,7 @@ const ZombieGame: React.FC = () => {
                 marginBottom: 18
               }}
             >
-              Add your walkthrough video here so players can learn how the
-              slider tool works before the missions begin.
+              Quick video overview of how the mission and training tools work.
             </div>
             <div
               style={{
@@ -2203,17 +2202,9 @@ const ZombieGame: React.FC = () => {
                   minHeight: 320
                 }}
               >
-                <source src={assetUrl("tutorial-video.mp4")} type="video/mp4" />
+                <source src={assetUrl("tutorial.mp4")} type="video/mp4" />
                 Your browser does not support the video tag.
               </video>
-            </div>
-            <div
-              style={{
-                color: "#666",
-                fontSize: 11
-              }}
-            >
-              Replace `frontend/public/tutorial-video.mp4` with your tutorial video.
             </div>
           </div>
 
@@ -2236,13 +2227,12 @@ const ZombieGame: React.FC = () => {
                 marginBottom: 14
               }}
             >
-              TRY THESE STEPS
+              Instructions
             </div>
             {[
-              "Move one slider at a time so you can notice what changes.",
-              "Try a very low weight, then a very high weight, and compare the result.",
-              "Watch for mistakes: missed zombies and humans hit both matter.",
-              "Experiment before pressing eliminate so you can see how the AI reacts."
+              "Read mission debriefings to prepare for each level!",
+              "Train bots by changing sliders!",
+              "Save humanity and eliminate all Zombies!!"
             ].map((tip, i) => (
               <div
                 key={tip}
@@ -2286,27 +2276,11 @@ const ZombieGame: React.FC = () => {
               </div>
             ))}
 
-            <div
-              style={{
-                marginTop: "auto",
-                background: "#0f0d00",
-                border: "1px solid #3a2f00",
-                borderRadius: 10,
-                padding: "12px 14px",
-                color: "#cc9900",
-                fontSize: 12,
-                lineHeight: 1.7,
-                marginBottom: 16
-              }}
-            >
-              Hint bubble idea: use this space to guide students to test the
-              sliders instead of guessing immediately.
-            </div>
-
             <button
               onClick={continueFromTutorial}
               style={{
                 width: "100%",
+                marginTop: "auto",
                 padding: "12px 0",
                 background: "#cc2200",
                 color: "#fff",
