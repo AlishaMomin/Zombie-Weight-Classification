@@ -52,6 +52,12 @@ type WeightChangeEvent = {
   weightChange: { key: keyof Weights; val: number };
 };
 
+const WEIGHT_TO_API: Record<keyof Weights, "skin" | "walk" | "temp"> = {
+  s: "skin",
+  w: "walk",
+  b: "temp"
+};
+
 type GameEvent = EliminationResult | WeightChangeEvent;
 
 type LeaderboardEntry = {
@@ -79,15 +85,15 @@ const ROUNDS_DATA: RoundConfig[] = [
     difficulty: "Easy",
     color: "#1a3a1a",
     textColor: "#4a8",
-    tip: "Zombies move slow and look pale. High weights on Skin + Walk should work!",
+    tip: "Every zombie reads cold, slow, and pale. Every human reads warm, fast, and not pale — tune weights to separate the two groups.",
     chars: [
       { x: 0.09, y: 0.22, t: "z", f: { s: 1, w: 1, b: 1 } },
-      { x: 0.2, y: 0.28, t: "z", f: { s: 1, w: 1, b: 0 } },
+      { x: 0.2, y: 0.28, t: "z", f: { s: 1, w: 1, b: 1 } },
       { x: 0.07, y: 0.52, t: "z", f: { s: 1, w: 1, b: 1 } },
-      { x: 0.18, y: 0.6, t: "z", f: { s: 0, w: 1, b: 1 } },
+      { x: 0.18, y: 0.6, t: "z", f: { s: 1, w: 1, b: 1 } },
       { x: 0.65, y: 0.18, t: "h", f: { s: 0, w: 0, b: 0 } },
       { x: 0.78, y: 0.24, t: "h", f: { s: 0, w: 0, b: 0 } },
-      { x: 0.68, y: 0.46, t: "h", f: { s: 1, w: 0, b: 0 } },
+      { x: 0.68, y: 0.46, t: "h", f: { s: 0, w: 0, b: 0 } },
       { x: 0.8, y: 0.52, t: "h", f: { s: 0, w: 0, b: 0 } }
     ]
   },
@@ -96,16 +102,16 @@ const ROUNDS_DATA: RoundConfig[] = [
     difficulty: "Medium",
     color: "#3a2a00",
     textColor: "#fa0",
-    tip: "Some humans look suspicious! Body temperature is your secret weapon here.",
+    tip: "Zombies still match the full pattern. Some humans are pale only — they stay warm and fast, so temp and walk can save you.",
     chars: [
       { x: 0.09, y: 0.2, t: "z", f: { s: 1, w: 1, b: 1 } },
-      { x: 0.2, y: 0.35, t: "z", f: { s: 0, w: 1, b: 1 } },
-      { x: 0.07, y: 0.55, t: "z", f: { s: 1, w: 0, b: 1 } },
-      { x: 0.18, y: 0.7, t: "z", f: { s: 0, w: 0, b: 1 } },
-      { x: 0.65, y: 0.18, t: "h", f: { s: 1, w: 1, b: 0 } },
+      { x: 0.2, y: 0.35, t: "z", f: { s: 1, w: 1, b: 1 } },
+      { x: 0.07, y: 0.55, t: "z", f: { s: 1, w: 1, b: 1 } },
+      { x: 0.18, y: 0.7, t: "z", f: { s: 1, w: 1, b: 1 } },
+      { x: 0.65, y: 0.18, t: "h", f: { s: 1, w: 0, b: 0 } },
       { x: 0.78, y: 0.28, t: "h", f: { s: 0, w: 0, b: 0 } },
       { x: 0.68, y: 0.5, t: "h", f: { s: 1, w: 0, b: 0 } },
-      { x: 0.8, y: 0.6, t: "h", f: { s: 0, w: 1, b: 0 } },
+      { x: 0.8, y: 0.6, t: "h", f: { s: 0, w: 0, b: 0 } },
       { x: 0.72, y: 0.75, t: "h", f: { s: 0, w: 0, b: 0 } }
     ]
   },
@@ -114,18 +120,18 @@ const ROUNDS_DATA: RoundConfig[] = [
     difficulty: "Hard",
     color: "#3a0000",
     textColor: "#f55",
-    tip: "Maximum chaos! Doctors look cold, patients shuffle. Trust body temp!",
+    tip: "Misleading humans each show only ONE zombie-like cue (cold, slow, or pale). No human matches the full zombie signature — combine weights to tell them apart.",
     chars: [
-      { x: 0.08, y: 0.18, t: "z", f: { s: 0, w: 1, b: 1 } },
-      { x: 0.19, y: 0.3, t: "z", f: { s: 1, w: 0, b: 1 } },
-      { x: 0.06, y: 0.5, t: "z", f: { s: 1, w: 1, b: 0 } },
-      { x: 0.17, y: 0.65, t: "z", f: { s: 0, w: 0, b: 1 } },
+      { x: 0.08, y: 0.18, t: "z", f: { s: 1, w: 1, b: 1 } },
+      { x: 0.19, y: 0.3, t: "z", f: { s: 1, w: 1, b: 1 } },
+      { x: 0.06, y: 0.5, t: "z", f: { s: 1, w: 1, b: 1 } },
+      { x: 0.17, y: 0.65, t: "z", f: { s: 1, w: 1, b: 1 } },
       { x: 0.22, y: 0.8, t: "z", f: { s: 1, w: 1, b: 1 } },
-      { x: 0.65, y: 0.15, t: "h", f: { s: 1, w: 1, b: 0 } },
+      { x: 0.65, y: 0.15, t: "h", f: { s: 0, w: 0, b: 1 } },
       { x: 0.78, y: 0.22, t: "h", f: { s: 0, w: 1, b: 0 } },
       { x: 0.68, y: 0.45, t: "h", f: { s: 1, w: 0, b: 0 } },
       { x: 0.8, y: 0.55, t: "h", f: { s: 0, w: 0, b: 0 } },
-      { x: 0.72, y: 0.72, t: "h", f: { s: 1, w: 1, b: 0 } }
+      { x: 0.72, y: 0.72, t: "h", f: { s: 0, w: 0, b: 0 } }
     ]
   }
 ];
@@ -651,35 +657,10 @@ function GameCanvas({
     phaseRef.current = "running";
     const w = weights;
     const targets = charsRef.current.filter((c) => c.type !== "r");
-    let i = 0;
-    const iv = window.setInterval(() => {
-      if (i >= targets.length) {
-        window.clearInterval(iv);
-        window.setTimeout(() => {
-          let correct = 0;
-          let missed = 0;
-          let wrong = 0;
-          targets.forEach((c) => {
-            if (c.state === "eliminated" || c.state === "saved") correct += 1;
-            else if (c.state === "alive") missed += 1;
-            else if (c.state === "wrongly-hit") wrong += 1;
-          });
-          const acc = Math.round((correct / targets.length) * 100);
-          const score = Math.max(0, correct * 10 - missed * 15 - wrong * 15);
-          phaseRef.current = "done";
-          onEvent({ correct, missed, wrong, acc, score });
-        }, 700);
-        return;
-      }
-      const c = targets[i];
-      const max = w.s + w.w + w.b || 1;
-      const raw =
-        (c.f?.s ?? 0) * w.s +
-        (c.f?.w ?? 0) * w.w +
-        (c.f?.b ?? 0) * w.b;
-      const sc = (raw / max) * 10;
+
+    const applyLocal = (c: CanvasChar, predictedZombie: boolean) => {
       c.state =
-        sc >= 5
+        predictedZombie
           ? c.type === "z"
             ? "eliminated"
             : "wrongly-hit"
@@ -691,8 +672,93 @@ function GameCanvas({
         c.flash = Math.max(0, c.flash - 0.12);
         if (c.flash <= 0) window.clearInterval(fl);
       }, 40);
-      i += 1;
-    }, 280);
+    };
+
+    const localPredictedZombie = (c: CanvasChar) => {
+      const max = w.s + w.w + w.b || 1;
+      const raw =
+        (c.f?.s ?? 0) * w.s +
+        (c.f?.w ?? 0) * w.w +
+        (c.f?.b ?? 0) * w.b;
+      const sc = (raw / max) * 10;
+      return sc >= 5;
+    };
+
+    const runInterval = (
+      predMap: Map<number, boolean> | null
+    ) => {
+      let i = 0;
+      const iv = window.setInterval(() => {
+        if (i >= targets.length) {
+          window.clearInterval(iv);
+          window.setTimeout(() => {
+            let correct = 0;
+            let missed = 0;
+            let wrong = 0;
+            targets.forEach((c) => {
+              if (c.state === "eliminated" || c.state === "saved") correct += 1;
+              else if (c.state === "alive") missed += 1;
+              else if (c.state === "wrongly-hit") wrong += 1;
+            });
+            const acc = Math.round((correct / targets.length) * 100);
+            const score = Math.max(0, correct * 10 - missed * 15 - wrong * 15);
+            phaseRef.current = "done";
+            onEvent({ correct, missed, wrong, acc, score });
+          }, 700);
+          return;
+        }
+        const c = targets[i];
+        const id = c.id;
+        let predictedZombie: boolean;
+        if (
+          predMap &&
+          id !== undefined &&
+          predMap.has(id)
+        ) {
+          predictedZombie = predMap.get(id)!;
+        } else {
+          predictedZombie = localPredictedZombie(c);
+        }
+        applyLocal(c, predictedZombie);
+        i += 1;
+      }, 280);
+    };
+
+    void (async () => {
+      let predMap: Map<number, boolean> | null = null;
+      try {
+        const res = await fetch(`${API_BASE}/api/ai/classify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            round: round + 1,
+            weights: { skin: w.s, walk: w.w, temp: w.b },
+            targets: targets.map((c) => ({
+              id: c.id,
+              features: {
+                s: c.f?.s ?? 0,
+                w: c.f?.w ?? 0,
+                b: c.f?.b ?? 0
+              }
+            }))
+          })
+        });
+        if (res.ok) {
+          const data = (await res.json()) as {
+            results?: Array<{ id: number; predictedZombie: boolean }>;
+          };
+          const rows = data.results;
+          if (Array.isArray(rows) && rows.length > 0) {
+            predMap = new Map(
+              rows.map((r) => [r.id, r.predictedZombie])
+            );
+          }
+        }
+      } catch {
+        predMap = null;
+      }
+      runInterval(predMap);
+    })();
   };
 
   const rd = ROUNDS_DATA[round];
@@ -1418,6 +1484,9 @@ const ZombieGame: React.FC = () => {
   const [gameTimerMs, setGameTimerMs] = useState(0);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [lastWeightApiFeature, setLastWeightApiFeature] = useState<
+    "skin" | "walk" | "temp" | null
+  >(null);
   const [ansQ1, setAnsQ1] = useState("");
   const [ansQ2, setAnsQ2] = useState<string | null>(null);
   const [ansQ3, setAnsQ3] = useState<string | null>(null);
@@ -1429,6 +1498,44 @@ const ZombieGame: React.FC = () => {
   useEffect(() => {
     loadLB().then(setLeaderboard);
   }, []);
+
+  // Send slider state to the Python AI so it knows which features you emphasize.
+  useEffect(() => {
+    if (screen !== "game") return;
+    const t = window.setTimeout(() => {
+      void (async () => {
+        try {
+          await fetchJsonOrThrow(`${API_BASE}/api/ai/feedback`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sessionId: sessionId ?? undefined,
+              playerId: playerId ?? undefined,
+              round: round + 1,
+              weights: {
+                skin: weights.s,
+                walk: weights.w,
+                temp: weights.b
+              },
+              lastAdjustedFeature: lastWeightApiFeature ?? undefined
+            })
+          });
+        } catch {
+          // offline / no backend
+        }
+      })();
+    }, 450);
+    return () => window.clearTimeout(t);
+  }, [
+    screen,
+    sessionId,
+    playerId,
+    round,
+    weights.s,
+    weights.w,
+    weights.b,
+    lastWeightApiFeature
+  ]);
 
   const handleStart = async () => {
     if (!avatar) {
@@ -1453,6 +1560,7 @@ const ZombieGame: React.FC = () => {
     setSurveyError("");
     setAnsQ1(""); setAnsQ2(null); setAnsQ3(null);
     setAnsQ4(null); setAnsQ5(""); setAnsQ6(5);
+    setLastWeightApiFeature(null);
     try {
       const pData = await fetchJsonOrThrow(`${API_BASE}/api/player`, {
         method: "POST",
@@ -1512,6 +1620,7 @@ const ZombieGame: React.FC = () => {
 
   const handleGameEvent = (evt: GameEvent) => {
     if ("weightChange" in evt) {
+      setLastWeightApiFeature(WEIGHT_TO_API[evt.weightChange.key]);
       setWeights((w) => ({
         ...w,
         [evt.weightChange.key]: evt.weightChange.val
@@ -1590,6 +1699,7 @@ const ZombieGame: React.FC = () => {
     setRoundScores([]);
     setRoundResult(null);
     setWeights({ s: 7, w: 4, b: 5 });
+    setLastWeightApiFeature(null);
     setPlayerId(null);
     setSessionId(null);
     setSurveyError("");

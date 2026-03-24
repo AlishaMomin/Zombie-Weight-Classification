@@ -9,6 +9,12 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from psycopg2.extras import Json
 
+from ai_classifier import (
+  classify_batch,
+  feedback_message,
+  focus_from_weights,
+  model_summary,
+)
 from db import DatabaseConfigError, get_db
 
 
@@ -121,6 +127,120 @@ def _get_player_or_404(cur, player_id: str) -> Dict[str, Any]:
 @app.route("/")
 def home():
   return {"message": "Zombie API is running"}
+
+
+@app.get("/api/ai/model")
+def ai_model_info():
+  """Domain priors and feature definitions used by the weighted classifier."""
+  return jsonify(model_summary())
+
+
+@app.post("/api/ai/classify")
+def ai_classify():
+  """
+  Weighted zombie/human classification using user-provided feature weights.
+  Does not require a database.
+  """
+  data: Dict[str, Any] = request.get_json(force=True, silent=True) or {}
+  weights = data.get("weights") or {}
+  targets = data.get("targets")
+  if not isinstance(targets, list):
+    return jsonify({"error": "targets must be a list"}), 400
+
+  try:
+    threshold = float(data.get("threshold") or 5)
+  except (TypeError, ValueError):
+    return jsonify({"error": "threshold must be a number"}), 400
+  threshold = max(0.0, min(10.0, threshold))
+
+  try:
+    scale = float(data.get("scale") or 10)
+  except (TypeError, ValueError):
+    return jsonify({"error": "scale must be a number"}), 400
+
+  results = classify_batch(targets, weights, threshold=threshold, scale=scale)
+  return jsonify(
+    {
+      "threshold": threshold,
+      "scale": scale,
+      "focus": focus_from_weights(weights),
+      "results": [
+        {
+          "id": r.id,
+          "score": r.score,
+          "predictedZombie": r.predicted_zombie,
+        }
+        for r in results
+      ],
+      "model": model_summary(),
+    }
+  )
+
+
+@app.post("/api/ai/feedback")
+def ai_feedback():
+  """
+  Receives current slider weights from the frontend so the backend knows which
+  features the player is emphasizing. Optionally logs to `events` when DB is available.
+  """
+  data: Dict[str, Any] = request.get_json(force=True, silent=True) or {}
+  weights = data.get("weights") or {}
+  focus = focus_from_weights(weights)
+  message = feedback_message(focus)
+
+  last_feature = data.get("lastAdjustedFeature")
+  if last_feature is not None and last_feature not in {"skin", "walk", "temp"}:
+    last_feature = None
+
+  payload = {
+    "focus": focus,
+    "message": message,
+    "lastAdjustedFeature": last_feature,
+  }
+
+  session_id = (data.get("sessionId") or "").strip() or None
+  player_id = (data.get("playerId") or "").strip() or None
+  try:
+    round_number = int(data.get("round") or 0)
+  except (TypeError, ValueError):
+    round_number = 0
+
+  if session_id:
+    try:
+      with get_db() as conn:
+        with conn.cursor() as cur:
+          cur.execute(
+            """
+            INSERT INTO events (
+              player_id, session_id, round_number, event_type, feature, value, meta, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+            """,
+            (
+              player_id,
+              session_id,
+              round_number or None,
+              "ai_weight_feedback",
+              last_feature,
+              None,
+              Json(
+                {
+                  "weights": {
+                    "skin": int(weights.get("skin") or 0),
+                    "walk": int(weights.get("walk") or 0),
+                    "temp": int(weights.get("temp") or 0),
+                  },
+                  "focus": focus,
+                }
+              ),
+            ),
+          )
+    except DatabaseConfigError:
+      pass
+    except Exception:
+      app.logger.exception("ai_feedback log failed")
+
+  return jsonify(payload)
 
 
 @app.get("/api/health")
