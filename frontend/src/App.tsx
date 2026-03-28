@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import ZombieGame from "./ZombieGame";
 
 const App: React.FC = () => {
@@ -11,45 +11,33 @@ const App: React.FC = () => {
     window.localStorage.setItem("zai-theme", theme);
   }, [theme]);
 
-  const surfaceStyle = useMemo<React.CSSProperties>(() => {
-    if (theme === "light") {
-      return {
-        minHeight: "100vh",
-        background: "#ffffff",
-        color: "#111",
-        transition: "background 180ms ease, color 180ms ease"
-      };
-    }
-    return {
-      minHeight: "100vh",
-      background: "#121212",
-      color: "#f3f3f3",
-      transition: "background 180ms ease, color 180ms ease"
-    };
+  useEffect(() => {
+    const bg = theme === "light" ? "#f0f0f0" : "#0a0a0a";
+    document.documentElement.style.backgroundColor = bg;
+    document.body.style.backgroundColor = bg;
   }, [theme]);
 
   return (
     <div style={{ minHeight: "100vh", position: "relative", overflowX: "hidden" }}>
-      <div style={surfaceStyle}>
-        <ZombieGame />
-      </div>
+      <ZombieGame theme={theme} />
       <button
         type="button"
         onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
         style={{
           position: "fixed",
+          top: 16,
           right: 16,
-          bottom: 16,
-          zIndex: 9999,
+          bottom: "auto",
+          zIndex: 10000,
           borderRadius: 999,
-          border: "1px solid #555",
-          background: theme === "dark" ? "#f8f8f8" : "#111",
-          color: theme === "dark" ? "#111" : "#f8f8f8",
+          border: theme === "dark" ? "1px solid #666" : "1px solid #bbb",
+          background: theme === "dark" ? "#f0f0f0" : "#1a1a1a",
+          color: theme === "dark" ? "#111" : "#f5f5f5",
           fontWeight: 700,
           fontSize: 12,
           padding: "10px 14px",
           cursor: "pointer",
-          boxShadow: "0 6px 20px rgba(0,0,0,0.25)"
+          boxShadow: "0 4px 16px rgba(0,0,0,0.2)"
         }}
         aria-label="Toggle light or dark mode"
       >

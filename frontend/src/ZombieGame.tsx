@@ -81,6 +81,9 @@ const assetUrl = (file: string) =>
     .map((seg) => encodeURIComponent(seg))
     .join("/")}`;
 
+/** Space for the fixed theme toggle in `App.tsx` (top-right) so headers don’t overlap. */
+const HEADER_RIGHT_SAFE_PX = 168;
+
 /** Survey Q2: multi-select; ids persisted comma-separated in `q2_weight_fairness`. */
 const SURVEY_Q2_OPTIONS = [
   {
@@ -281,6 +284,8 @@ async function fetchJsonOrThrow(url: string, init?: RequestInit) {
 }
 
 // ── Canvas Game Component ─────────────────────────────────────────────────────
+export type ZombieUiTheme = "dark" | "light";
+
 type GameCanvasProps = {
   round: number;
   weights: Weights;
@@ -290,6 +295,7 @@ type GameCanvasProps = {
   onOpenLeaderboard: () => void;
   onSelectAvatar: (id: AvatarId) => void;
   timerMs: number;
+  theme: ZombieUiTheme;
 };
 
 function GameCanvas({
@@ -300,8 +306,10 @@ function GameCanvas({
   avatar,
   onOpenLeaderboard,
   onSelectAvatar,
-  timerMs
+  timerMs,
+  theme
 }: GameCanvasProps) {
+  const isLight = theme === "light";
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const charsRef = useRef<CanvasChar[]>([]);
@@ -813,10 +821,38 @@ function GameCanvas({
     secondsPart
   )}:${pad3(msPart)}`;
 
+  const gc = {
+    outerBg: isLight ? "#d4d4d4" : "#000",
+    headerBg: isLight ? "#ececec" : "#111",
+    headerBorder: isLight ? "#b8b8b8" : "#1e1e1e",
+    avatarRingBg: isLight ? "#fafafa" : "#1a1a1a",
+    avatarRingBorder: isLight ? "#888" : "#444",
+    nameMain: isLight ? "#111" : "#eee",
+    nameMuted: isLight ? "#555" : "#aaaaaa",
+    sidebarBg: isLight ? "#e2e2e2" : "#111",
+    sidebarBorder: isLight ? "#b0b0b0" : "#1e1e1e",
+    sliderLabel: isLight ? "#111" : "#fff",
+    sliderLowHigh: isLight ? "#666" : "#aaa",
+    weightPillBg: isLight ? "#fff3cd" : "#120f00",
+    bottomBarBg: isLight ? "#dedede" : "#111",
+    bottomBarTopBorder: isLight ? "#b0b0b0" : "#1e1e1e",
+    timerBg: isLight ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.7)",
+    timerBorder: isLight ? "#999" : "#222",
+    timerColor: isLight ? "#1a1a1a" : "#ccc",
+    diffGold: isLight ? "#6a4800" : "#ffdd77",
+    lbLink: isLight ? "#5a4000" : "#ffdd77",
+    weightNum: isLight ? "#8a5a00" : "#ffcc66",
+    hintBg: isLight ? "#fff6e8" : "#1a1200",
+    hintBorder: isLight ? "#e0c090" : "#4a3800",
+    hintTitle: isLight ? "#cc7700" : "#ff9900",
+    hintBody: isLight ? "#5a4010" : "#ffbb55",
+    botLabel: isLight ? "#444444" : "#cccccc"
+  };
+
   return (
     <div
       style={{
-        background: "#000",
+        background: gc.outerBg,
         display: "flex",
         flexDirection: "column",
         fontFamily: "'Courier New', monospace",
@@ -825,9 +861,13 @@ function GameCanvas({
     >
       <div
         style={{
-          background: "#111",
-          borderBottom: "1px solid #1e1e1e",
-          padding: "8px 16px",
+          background: gc.headerBg,
+          borderBottom: `1px solid ${gc.headerBorder}`,
+          paddingTop: 8,
+          paddingBottom: 8,
+          paddingLeft: 16,
+          paddingRight: 16 + HEADER_RIGHT_SAFE_PX,
+          boxSizing: "border-box",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
@@ -837,7 +877,7 @@ function GameCanvas({
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <div
             style={{
-              color: "#ff3333",
+              color: isLight ? "#cc2222" : "#ff3333",
               fontWeight: "bold",
               fontSize: 16,
               letterSpacing: 2
@@ -846,7 +886,7 @@ function GameCanvas({
             🧟 ROUND {round + 1}/3 — {rd.name.toUpperCase()}{" "}
             <span
               style={{
-                color: "#ffdd77",
+                color: gc.diffGold,
                 fontSize: 14
               }}
             >
@@ -870,8 +910,8 @@ function GameCanvas({
               width: 34,
               height: 34,
               borderRadius: "50%",
-              background: "#1a1a1a",
-              border: "1px solid #444",
+              background: gc.avatarRingBg,
+              border: `1px solid ${gc.avatarRingBorder}`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -892,7 +932,7 @@ function GameCanvas({
           >
             <span
               style={{
-                color: "#eee",
+                color: gc.nameMain,
                 fontSize: 15,
                 fontWeight: "bold",
                 whiteSpace: "nowrap",
@@ -904,7 +944,7 @@ function GameCanvas({
             </span>
             <span
               style={{
-                color: "#aaaaaa",
+                color: gc.nameMuted,
                 fontSize: 13
               }}
             >
@@ -918,7 +958,8 @@ function GameCanvas({
             display: "flex",
             flexDirection: "column",
             alignItems: "flex-end",
-            gap: 2
+            gap: 2,
+            flexShrink: 0
           }}
         >
           <button
@@ -926,14 +967,15 @@ function GameCanvas({
             onClick={onOpenLeaderboard}
             style={{
               fontSize: 13,
-              color: "#ffdd77",
+              color: gc.lbLink,
               display: "flex",
               alignItems: "center",
               gap: 4,
               background: "transparent",
               border: "none",
               padding: 0,
-              cursor: "pointer"
+              cursor: "pointer",
+              whiteSpace: "nowrap"
             }}
           >
             <span>🏆</span>
@@ -966,12 +1008,12 @@ function GameCanvas({
         <div
           style={{
             width: 228,
-            background: "#111",
+            background: gc.sidebarBg,
             display: "flex",
             flexDirection: "column",
             padding: 14,
             gap: 12,
-            borderLeft: "1px solid #1e1e1e",
+            borderLeft: `1px solid ${gc.sidebarBorder}`,
             flexShrink: 0
           }}
         >
@@ -1001,7 +1043,7 @@ function GameCanvas({
               >
                 <span
                   style={{
-                    color: "#fff",
+                    color: gc.sliderLabel,
                     fontSize: 15,
                     fontWeight: "bold",
                     whiteSpace: "pre-line",
@@ -1012,10 +1054,10 @@ function GameCanvas({
                 </span>
                 <span
                   style={{
-                    color: "#ffcc66",
+                    color: gc.weightNum,
                     fontSize: 15,
                     fontWeight: "bold",
-                    background: "#120f00",
+                    background: gc.weightPillBg,
                     padding: "2px 10px",
                     borderRadius: 4
                   }}
@@ -1049,7 +1091,7 @@ function GameCanvas({
                   display: "flex",
                   justifyContent: "space-between",
                   fontSize: 10,
-                  color: "#aaa",
+                  color: gc.sliderLowHigh,
                   marginTop: 2
                 }}
               >
@@ -1116,8 +1158,8 @@ function GameCanvas({
 
       <div
         style={{
-          background: "#111",
-          borderTop: "2px solid #1e1e1e",
+          background: gc.bottomBarBg,
+          borderTop: `2px solid ${gc.bottomBarTopBorder}`,
           height: 90,
           display: "flex",
           alignItems: "center",
@@ -1141,7 +1183,7 @@ function GameCanvas({
             transform: avatar === "scout" ? "scale(1.05)" : "scale(1)"
           }}
         >
-          <BotItem Bot={ScoutBot} label="Scout bot" />
+          <BotItem Bot={ScoutBot} label="Scout bot" labelColor={gc.botLabel} />
         </button>
         <button
           type="button"
@@ -1155,7 +1197,7 @@ function GameCanvas({
             transform: avatar === "defence" ? "scale(1.05)" : "scale(1)"
           }}
         >
-          <BotItem Bot={DefenceBot} label="Defence bot" />
+          <BotItem Bot={DefenceBot} label="Defence bot" labelColor={gc.botLabel} />
         </button>
         <button
           type="button"
@@ -1169,10 +1211,10 @@ function GameCanvas({
             transform: avatar === "patrol" ? "scale(1.05)" : "scale(1)"
           }}
         >
-          <BotItem Bot={PatrolBot} label="Patrol bot" />
+          <BotItem Bot={PatrolBot} label="Patrol bot" labelColor={gc.botLabel} />
         </button>
 
-        {/* Bottom-right round timer (aligned with bot bar) */}
+        {/* Bottom-right round timer (theme toggle lives top-right in App) */}
         <div
           style={{
             position: "absolute",
@@ -1180,10 +1222,10 @@ function GameCanvas({
             bottom: 10,
             padding: "4px 10px",
             borderRadius: 12,
-            background: "rgba(0,0,0,0.7)",
-            border: "1px solid #222",
+            background: gc.timerBg,
+            border: `1px solid ${gc.timerBorder}`,
             fontSize: 18,
-            color: "#ccc",
+            color: gc.timerColor,
             textAlign: "right",
             lineHeight: 1.3
           }}
@@ -1200,9 +1242,10 @@ function GameCanvas({
 type BotItemProps = {
   Bot: React.ComponentType;
   label: string;
+  labelColor?: string;
 };
 
-function BotItem({ Bot, label }: BotItemProps) {
+function BotItem({ Bot, label, labelColor = "#ccc" }: BotItemProps) {
   return (
     <div
       style={{
@@ -1215,7 +1258,7 @@ function BotItem({ Bot, label }: BotItemProps) {
       <Bot />
       <div
         style={{
-          color: "#ccc",
+          color: labelColor,
           fontSize: 15,
           fontFamily: "'Courier New', monospace"
         }}
@@ -1489,7 +1532,11 @@ type Screen =
   | "survey_q6"   // After Round 3: explain "weight" to a friend (open text)
   | "survey_q7";  // After Q6: AI decision confidence (slider 1–10)
 
-const ZombieGame: React.FC = () => {
+type ZombieGameProps = {
+  theme?: ZombieUiTheme;
+};
+
+const ZombieGame: React.FC<ZombieGameProps> = ({ theme = "dark" }) => {
   const [screen, setScreen] = useState<Screen>("intro");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -1873,11 +1920,291 @@ const ZombieGame: React.FC = () => {
     setScreen("leaderboard");
   };
 
-  const S: React.CSSProperties = {
-    fontFamily: "'Courier New', monospace",
-    background: "#0a0a0a",
-    minHeight: 620
-  };
+  const S: React.CSSProperties = useMemo(
+    () => ({
+      fontFamily: "'Courier New', monospace",
+      minHeight: "100vh",
+      boxSizing: "border-box",
+      ...(theme === "light"
+        ? { background: "#f0f0f0", color: "#1a1a1a" }
+        : { background: "#0a0a0a" })
+    }),
+    [theme]
+  );
+
+  /** Text & surfaces for light vs dark (keep accents red/orange readable on both). */
+  const tc = useMemo(() => {
+    if (theme === "light") {
+      return {
+        subtitle: "#5a5a5a",
+        body: "#1a1a1a",
+        bodySoft: "#2a2a2a",
+        panel: "#ffffff",
+        panel2: "#f5f5f5",
+        panel3: "#ececec",
+        panelBorder: "#c4c4c4",
+        panelBorder2: "#b8b8b8",
+        inputBg: "#ffffff",
+        inputText: "#111111",
+        inputBorder: "#888888",
+        label: "#333333",
+        labelMuted: "#4a4a4a",
+        avatarBtnBg: "#f0f0f0",
+        avatarBtnBorder: "#999999",
+        pickerWrapBg: "#f2f2f2",
+        pickerWrapBorder: "#cccccc",
+        pickerItemBg: "#ffffff",
+        pickerItemBorder: "#bbbbbb",
+        pickerItemBgSel: "#fff4e6",
+        pickerItemBorderSel: "#ff9900",
+        pickerLabelIdle: "#555555",
+        pickerLabelSel: "#8a4a00",
+        introBlurbOrange: "#cc7700",
+        viewLbText: "#333333",
+        viewLbBorder: "#bbbbbb",
+        tutorialPanel: "#ffffff",
+        tutorialPanelBorder: "#c8c8c8",
+        tutorialHead: "#111111",
+        tutorialSub: "#555555",
+        videoWell: "#eaeaea",
+        videoWellBorder: "#cccccc",
+        tipBgEven: "#f6f6f6",
+        tipBgOdd: "#fff8f0",
+        tipBorder: "#dddddd",
+        tipNumBg: "#ffe8cc",
+        tipNumBorder: "rgba(255,153,0,0.35)",
+        tipNumText: "#7a4a00",
+        tipText: "#1a1a1a",
+        narrBarBg: "#f0f0f0",
+        narrBarBorder: "#c8c8c8",
+        narrRound: "#444444",
+        briefingMeta: "#555555",
+        bubbleBg: "#f7f7f7",
+        bubbleBorderCmd: "#a8c8a8",
+        bubbleBorderAi: "#a8b8d8",
+        typewriter: "#1a1a1a",
+        narrSkipBgOff: "#e8e8e8",
+        narrSkipTextOff: "#777777",
+        narrSkipBorderOff: "#bbbbbb",
+        surveyHeaderQ: "#444444",
+        surveyCardBg: "#ffffff",
+        surveyCardBorder: "#c8c8c8",
+        surveyDotIdle: "#cccccc",
+        mcIdle: "#333333",
+        mcSel: "#8a5a00",
+        mcBgSel: "#fff4e0",
+        mcBorderSel: "rgba(255,153,0,0.35)",
+        surveyErrorBg: "#fdeaea",
+        surveyErrorBorder: "#e0a0a0",
+        surveyErrorText: "#9a2020",
+        textareaBg: "#ffffff",
+        textareaBorder: "#888888",
+        textareaText: "#111111",
+        hintMuted: "#555555",
+        overlayScrim: "rgba(0,0,0,0.45)",
+        lbName: "#1a1a1a",
+        lbNameYou: "#8a4a00",
+        lbSub: "#555555",
+        lbEmpty: "#888888",
+        roundResultTitle: "#111111",
+        roundResultSub: "#555555",
+        statLabel: "#444444",
+        perfHeader: "#8a4a00",
+        perfSub: "#666666",
+        roundNameMuted: "#555555",
+        zaiRed: "#cc2222",
+        avatarTitle: "#1a1a1a",
+        surveyQAccent: "#6a4500",
+        surveyBody: "#333333",
+        surveyList: "#333333",
+        surveyMuted: "#666666",
+        surveyHint: "#444444",
+        surveySliderEnd: "#444444",
+        surveyValueBold: "#8a5a00",
+        imageWellBg: "#eaeaea",
+        imageWellBorder: "#c8c8c8",
+        missionTipBg: "#fff8e8",
+        missionTipBorder: "#e0c878",
+        missionTipBody: "#5a4810",
+        narrDotIdle: "#cccccc",
+        replayBg: "#f2ede0",
+        replayText: "#6b5500",
+        replayBorder: "#a09050",
+        lessonBg: "#e6f2fa",
+        lessonBorder: "#90b8d8",
+        lessonHead: "#256090",
+        lessonText: "#1a4058",
+        rrCardBg: "#ffffff",
+        rrCardBorder: "#c8c8c8",
+        rrStatBox: "#f4f4f4",
+        rrStatBoxBorder: "#d8d8d8",
+        rrStatLabel: "#555555",
+        rrAccSection: "#f4f4f4",
+        rrAccSectionBorder: "#d8d8d8",
+        rrTrack: "#e0e0e0",
+        lbFullHeaderBg: "#f0f0f0",
+        lbFullHeaderBorder: "#c8c8c8",
+        lbPerfOuter: "#ffffff",
+        lbPerfBorder: "rgba(255,153,0,0.35)",
+        lbStatTile: "#f6f6f6",
+        lbRoundRow: "#f6f6f6",
+        lbRoundName: "#333333",
+        lbRoundAcc: "#555555",
+        lbAllTime: "#555555",
+        lbEmptyMsg: "#888888",
+        lbRowBg: "#ffffff",
+        lbRowBgYou: "#fff4e6",
+        lbRowBorder: "#dddddd",
+        lbRowBorderYou: "rgba(255,153,0,0.35)",
+        lbNameOther: "#333333",
+        overlayModalBg: "#ffffff",
+        overlayModalBorder: "#c8c8c8",
+        overlaySection: "#f6f6f6",
+        overlaySectionBorder: "#dddddd",
+        overlayCloseText: "#555555",
+        overlayCloseBorder: "#aaaaaa",
+        overlayMuted: "#555555",
+        overlayRowYou: "#fff4e6",
+        overlayRowOther: "#f8f8f8",
+        overlayRowBorder: "#dddddd",
+        overlayMedal: "#444444"
+      };
+    }
+    return {
+      subtitle: "#adadad",
+      body: "#d0d0d0",
+      bodySoft: "#d0d0d0",
+      panel: "#1b1b1b",
+      panel2: "#151515",
+      panel3: "#181818",
+      panelBorder: "#555555",
+      panelBorder2: "#333333",
+      inputBg: "#101010",
+      inputText: "#ffffff",
+      inputBorder: "#666666",
+      label: "#d5d5d5",
+      labelMuted: "#d0d0d0",
+      avatarBtnBg: "#202020",
+      avatarBtnBorder: "#8a8a8a",
+      pickerWrapBg: "#151515",
+      pickerWrapBorder: "#222222",
+      pickerItemBg: "#181818",
+      pickerItemBorder: "#333333",
+      pickerItemBgSel: "#261400",
+      pickerItemBorderSel: "#ff9900",
+      pickerLabelIdle: "#777777",
+      pickerLabelSel: "#ffdd88",
+      introBlurbOrange: "#ff9900",
+      viewLbText: "#bcbcbc",
+      viewLbBorder: "#222222",
+      tutorialPanel: "#111111",
+      tutorialPanelBorder: "#222222",
+      tutorialHead: "#ffffff",
+      tutorialSub: "#999999",
+      videoWell: "#050505",
+      videoWellBorder: "#222222",
+      tipBgEven: "#171717",
+      tipBgOdd: "#14100a",
+      tipBorder: "#2a2a2a",
+      tipNumBg: "#261400",
+      tipNumBorder: "rgba(255,153,0,0.27)",
+      tipNumText: "#ffcc66",
+      tipText: "#dddddd",
+      narrBarBg: "#111111",
+      narrBarBorder: "#1e1e1e",
+      narrRound: "#adadad",
+      briefingMeta: "#9a9a9a",
+      bubbleBg: "#111111",
+      bubbleBorderCmd: "#2a3a2a",
+      bubbleBorderAi: "#1a2a3a",
+      typewriter: "#dddddd",
+      narrSkipBgOff: "#1a1a1a",
+      narrSkipTextOff: "#555555",
+      narrSkipBorderOff: "#333333",
+      surveyHeaderQ: "#adadad",
+      surveyCardBg: "#111111",
+      surveyCardBorder: "#222222",
+      surveyDotIdle: "#333333",
+      mcIdle: "#cccccc",
+      mcSel: "#ffdd88",
+      mcBgSel: "#1a1000",
+      mcBorderSel: "rgba(255,153,0,0.27)",
+      surveyErrorBg: "#220909",
+      surveyErrorBorder: "#553333",
+      surveyErrorText: "#ff7a7a",
+      textareaBg: "#0a0a0a",
+      textareaBorder: "#333333",
+      textareaText: "#eeeeee",
+      hintMuted: "#d8d8d8",
+      overlayScrim: "rgba(0,0,0,0.7)",
+      lbName: "#dddddd",
+      lbNameYou: "#ffdd88",
+      lbSub: "#c6c6c6",
+      lbEmpty: "#adadad",
+      roundResultTitle: "#ffffff",
+      roundResultSub: "#adadad",
+      statLabel: "#bcbcbc",
+      perfHeader: "#ff9900",
+      perfSub: "#9a9a9a",
+      roundNameMuted: "#adadad",
+      zaiRed: "#ff3333",
+      avatarTitle: "#eeeeee",
+      surveyQAccent: "#ffdd77",
+      surveyBody: "#cccccc",
+      surveyList: "#cccccc",
+      surveyMuted: "#aaaaaa",
+      surveyHint: "#d8d8d8",
+      surveySliderEnd: "#d0d0d0",
+      surveyValueBold: "#ffcc66",
+      imageWellBg: "#000000",
+      imageWellBorder: "#222222",
+      missionTipBg: "#0f0d00",
+      missionTipBorder: "#3a2f00",
+      missionTipBody: "#cc9900",
+      narrDotIdle: "#222222",
+      replayBg: "#1a1a1a",
+      replayText: "#ffdd77",
+      replayBorder: "#665200",
+      lessonBg: "#0a1520",
+      lessonBorder: "#1a3a5a",
+      lessonHead: "#4a9ab5",
+      lessonText: "#7ab5d5",
+      rrCardBg: "#111111",
+      rrCardBorder: "#222222",
+      rrStatBox: "#0a0a0a",
+      rrStatBoxBorder: "#1e1e1e",
+      rrStatLabel: "#adadad",
+      rrAccSection: "#0a0a0a",
+      rrAccSectionBorder: "#1e1e1e",
+      rrTrack: "#1a1a1a",
+      lbFullHeaderBg: "#111111",
+      lbFullHeaderBorder: "#1e1e1e",
+      lbPerfOuter: "#111111",
+      lbPerfBorder: "#ff990030",
+      lbStatTile: "#0a0a0a",
+      lbRoundRow: "#0a0a0a",
+      lbRoundName: "#bbbbbb",
+      lbRoundAcc: "#adadad",
+      lbAllTime: "#9a9a9a",
+      lbEmptyMsg: "#adadad",
+      lbRowBg: "#111111",
+      lbRowBgYou: "#130f00",
+      lbRowBorder: "#1e1e1e",
+      lbRowBorderYou: "#ff990044",
+      lbNameOther: "#bbbbbb",
+      overlayModalBg: "#111111",
+      overlayModalBorder: "#333333",
+      overlaySection: "#181818",
+      overlaySectionBorder: "#333333",
+      overlayCloseText: "#aaaaaa",
+      overlayCloseBorder: "#444444",
+      overlayMuted: "#d8d8d8",
+      overlayRowYou: "#181000",
+      overlayRowOther: "#151515",
+      overlayRowBorder: "#222222",
+      overlayMedal: "#d0d0d0"
+    };
+  }, [theme]);
 
   // INTRO
   if (screen === "intro") {
@@ -1899,7 +2226,7 @@ const ZombieGame: React.FC = () => {
             style={{
               fontSize: 30,
               fontWeight: "bold",
-              color: "#ff3333",
+              color: tc.zaiRed,
               letterSpacing: 3
             }}
           >
@@ -1908,7 +2235,7 @@ const ZombieGame: React.FC = () => {
           <div
             style={{
               fontSize: 11,
-              color: "#adadad",
+              color: tc.subtitle,
               letterSpacing: 5,
               marginTop: 4
             }}
@@ -1918,8 +2245,8 @@ const ZombieGame: React.FC = () => {
         </div>
         <div
           style={{
-            background: "#1b1b1b",
-            border: "1px solid #555",
+            background: tc.panel,
+            border: `1px solid ${tc.panelBorder}`,
             borderRadius: 12,
             padding: "28px 30px",
             width: "100%",
@@ -1928,14 +2255,14 @@ const ZombieGame: React.FC = () => {
         >
           <div
             style={{
-              color: "#d0d0d0",
+              color: tc.body,
               fontSize: 12,
               lineHeight: 1.8,
               marginBottom: 20
             }}
           >
             Train an AI to detect zombies using{" "}
-            <span style={{ color: "#ff9900" }}>weighted classification</span>.
+            <span style={{ color: tc.introBlurbOrange }}>weighted classification</span>.
             3 rounds.
           </div>
           <div
@@ -1979,7 +2306,7 @@ const ZombieGame: React.FC = () => {
             </button>
             <div
               style={{
-                color: "#eee",
+                color: tc.avatarTitle,
                 fontSize: 11,
                 fontWeight: "bold",
                 marginBottom: 2
@@ -1999,7 +2326,7 @@ const ZombieGame: React.FC = () => {
                 ? "Engineer Bot"
                 : "Tap to choose your bot"}
             </div>
-            <div style={{ color: "#d0d0d0", fontSize: 10 }}>
+            <div style={{ color: tc.bodySoft, fontSize: 10 }}>
               Avatar
             </div>
             {showAvatarPicker && (
@@ -2008,8 +2335,8 @@ const ZombieGame: React.FC = () => {
                   marginTop: 8,
                   padding: 8,
                   borderRadius: 8,
-                  border: "1px solid #222",
-                  background: "#151515",
+                  border: `1px solid ${tc.pickerWrapBorder}`,
+                  background: tc.pickerWrapBg,
                   display: "grid",
                   gridTemplateColumns: "repeat(3, 1fr)",
                   gap: 6
@@ -2036,9 +2363,9 @@ const ZombieGame: React.FC = () => {
                         padding: "6px 4px",
                         borderRadius: 6,
                         border: isSelected
-                          ? "1px solid #ff9900"
-                          : "1px solid #333",
-                        background: isSelected ? "#261400" : "#181818",
+                          ? `1px solid ${tc.pickerItemBorderSel}`
+                          : `1px solid ${tc.pickerItemBorder}`,
+                        background: isSelected ? tc.pickerItemBgSel : tc.pickerItemBg,
                         cursor: "pointer",
                         display: "flex",
                         flexDirection: "column",
@@ -2050,7 +2377,7 @@ const ZombieGame: React.FC = () => {
                       <div
                         style={{
                           fontSize: 9,
-                          color: isSelected ? "#ffdd88" : "#777"
+                          color: isSelected ? tc.pickerLabelSel : tc.pickerLabelIdle
                         }}
                       >
                         {opt.label}
@@ -2064,7 +2391,7 @@ const ZombieGame: React.FC = () => {
           <div style={{ marginBottom: 12 }}>
             <div
               style={{
-                color: "#d5d5d5",
+                color: tc.label,
                 fontSize: 11,
                 letterSpacing: 1,
                 marginBottom: 6
@@ -2084,10 +2411,10 @@ const ZombieGame: React.FC = () => {
                 display: "block",
                 width: "100%",
                 padding: "10px 14px",
-                background: "#101010",
-                border: "1px solid #666",
+                background: tc.inputBg,
+                border: `1px solid ${tc.inputBorder}`,
                 borderRadius: 8,
-                color: "#fff",
+                color: tc.inputText,
                 fontSize: 14,
                 fontFamily: "'Courier New',monospace",
                 outline: "none",
@@ -2098,7 +2425,7 @@ const ZombieGame: React.FC = () => {
           <div style={{ marginBottom: 14 }}>
             <div
               style={{
-                color: "#d5d5d5",
+                color: tc.label,
                 fontSize: 11,
                 letterSpacing: 1,
                 marginBottom: 6
@@ -2119,10 +2446,10 @@ const ZombieGame: React.FC = () => {
                 display: "block",
                 width: "100%",
                 padding: "10px 14px",
-                background: "#101010",
-                border: "1px solid #666",
+                background: tc.inputBg,
+                border: `1px solid ${tc.inputBorder}`,
                 borderRadius: 8,
-                color: "#fff",
+                color: tc.inputText,
                 fontSize: 14,
                 fontFamily: "'Courier New',monospace",
                 outline: "none",
@@ -2167,8 +2494,8 @@ const ZombieGame: React.FC = () => {
             style={{
               marginTop: 14,
               background: "transparent",
-              border: "1px solid #222",
-              color: "#bcbcbc",
+              border: `1px solid ${tc.viewLbBorder}`,
+              color: tc.viewLbText,
               padding: "8px 20px",
               borderRadius: 8,
               cursor: "pointer",
@@ -2207,15 +2534,15 @@ const ZombieGame: React.FC = () => {
         >
           <div
             style={{
-              background: "#111",
-              border: "1px solid #222",
+              background: tc.tutorialPanel,
+              border: `1px solid ${tc.tutorialPanelBorder}`,
               borderRadius: 14,
               padding: "22px 24px"
             }}
           >
             <div
               style={{
-                color: "#ff3333",
+                color: tc.zaiRed,
                 fontSize: 12,
                 fontWeight: "bold",
                 letterSpacing: 2,
@@ -2226,7 +2553,7 @@ const ZombieGame: React.FC = () => {
             </div>
             <div
               style={{
-                color: "#fff",
+                color: tc.tutorialHead,
                 fontSize: 22,
                 fontWeight: "bold",
                 marginBottom: 10
@@ -2236,7 +2563,7 @@ const ZombieGame: React.FC = () => {
             </div>
             <div
               style={{
-                color: "#999",
+                color: tc.tutorialSub,
                 fontSize: 13,
                 lineHeight: 1.7,
                 marginBottom: 18
@@ -2246,8 +2573,8 @@ const ZombieGame: React.FC = () => {
             </div>
             <div
               style={{
-                background: "#050505",
-                border: "1px solid #222",
+                background: tc.videoWell,
+                border: `1px solid ${tc.videoWellBorder}`,
                 borderRadius: 12,
                 padding: 12,
                 marginBottom: 12
@@ -2270,8 +2597,8 @@ const ZombieGame: React.FC = () => {
 
           <div
             style={{
-              background: "#111",
-              border: "1px solid #222",
+              background: tc.tutorialPanel,
+              border: `1px solid ${tc.tutorialPanelBorder}`,
               borderRadius: 14,
               padding: "22px 20px",
               display: "flex",
@@ -2280,7 +2607,7 @@ const ZombieGame: React.FC = () => {
           >
             <div
               style={{
-                color: "#ff9900",
+                color: tc.introBlurbOrange,
                 fontSize: 12,
                 fontWeight: "bold",
                 letterSpacing: 2,
@@ -2300,8 +2627,8 @@ const ZombieGame: React.FC = () => {
                   display: "flex",
                   gap: 10,
                   alignItems: "flex-start",
-                  background: i % 2 === 0 ? "#171717" : "#14100a",
-                  border: "1px solid #2a2a2a",
+                  background: i % 2 === 0 ? tc.tipBgEven : tc.tipBgOdd,
+                  border: `1px solid ${tc.tipBorder}`,
                   borderRadius: 12,
                   padding: "12px 12px",
                   marginBottom: 10
@@ -2312,9 +2639,9 @@ const ZombieGame: React.FC = () => {
                     minWidth: 26,
                     height: 26,
                     borderRadius: "50%",
-                    background: "#261400",
-                    border: "1px solid #ff990044",
-                    color: "#ffcc66",
+                    background: tc.tipNumBg,
+                    border: `1px solid ${tc.tipNumBorder}`,
+                    color: tc.tipNumText,
                     fontSize: 12,
                     fontWeight: "bold",
                     display: "flex",
@@ -2326,7 +2653,7 @@ const ZombieGame: React.FC = () => {
                 </div>
                 <div
                   style={{
-                    color: "#ddd",
+                    color: tc.tipText,
                     fontSize: 13,
                     lineHeight: 1.6
                   }}
@@ -2374,25 +2701,41 @@ const ZombieGame: React.FC = () => {
         <style>{`@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}`}</style>
         <div
           style={{
-            background: "#111",
-            borderBottom: "1px solid #1e1e1e",
-            padding: "12px 20px",
+            background: tc.narrBarBg,
+            borderBottom: `1px solid ${tc.narrBarBorder}`,
+            paddingTop: 12,
+            paddingBottom: 12,
+            paddingLeft: 20,
+            paddingRight: 20 + HEADER_RIGHT_SAFE_PX,
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "center"
+            alignItems: "center",
+            gap: 12,
+            boxSizing: "border-box"
           }}
         >
           <div
             style={{
-              color: "#ff3333",
+              color: tc.zaiRed,
               fontWeight: "bold",
               fontSize: 13,
-              letterSpacing: 2
+              letterSpacing: 2,
+              flexShrink: 0
             }}
           >
             ZOMBIE AI ACADEMY
           </div>
-          <div style={{ color: "#adadad", fontSize: 11 }}>
+          <div
+            style={{
+              color: tc.narrRound,
+              fontSize: 11,
+              textAlign: "right",
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap"
+            }}
+          >
             Round {round + 1}/3 — {rd.name}
           </div>
         </div>
@@ -2454,8 +2797,8 @@ const ZombieGame: React.FC = () => {
               </div>
               <div
                 style={{
-                  background: "#111",
-                  border: `1px solid ${isCmd ? "#2a3a2a" : "#1a2a3a"}`,
+                  background: tc.bubbleBg,
+                  border: `1px solid ${isCmd ? tc.bubbleBorderCmd : tc.bubbleBorderAi}`,
                   borderRadius: 12,
                   padding: "14px 18px",
                   minHeight: 70
@@ -2463,7 +2806,7 @@ const ZombieGame: React.FC = () => {
               >
                 <div
                   style={{
-                    color: "#ddd",
+                    color: tc.typewriter,
                     fontSize: 13,
                     lineHeight: 1.8
                   }}
@@ -2481,8 +2824,8 @@ const ZombieGame: React.FC = () => {
           {isLast && narrDone && (
             <div
               style={{
-                background: "#0f0d00",
-                border: "1px solid #3a2f00",
+                background: tc.missionTipBg,
+                border: `1px solid ${tc.missionTipBorder}`,
                 borderRadius: 10,
                 padding: "12px 18px",
                 maxWidth: 540,
@@ -2492,7 +2835,7 @@ const ZombieGame: React.FC = () => {
               <div
                 style={{
                   fontSize: 10,
-                  color: "#ff9900",
+                  color: tc.introBlurbOrange,
                   letterSpacing: 2,
                   marginBottom: 5
                 }}
@@ -2501,7 +2844,7 @@ const ZombieGame: React.FC = () => {
               </div>
               <div
                 style={{
-                  color: "#cc9900",
+                  color: tc.missionTipBody,
                   fontSize: 12,
                   lineHeight: 1.7
                 }}
@@ -2519,7 +2862,7 @@ const ZombieGame: React.FC = () => {
                   width: 8,
                   height: 8,
                   borderRadius: "50%",
-                  background: i <= narrLine ? "#ff3333" : "#222"
+                  background: i <= narrLine ? tc.zaiRed : tc.narrDotIdle
                 }}
               />
             ))}
@@ -2529,9 +2872,9 @@ const ZombieGame: React.FC = () => {
             onClick={handleNarrNext}
             style={{
               padding: "11px 36px",
-              background: narrDone ? "#cc2200" : "#1a1a1a",
-              color: narrDone ? "#fff" : "#555",
-              border: `1px solid ${narrDone ? "#cc2200" : "#333"}`,
+              background: narrDone ? "#cc2200" : tc.narrSkipBgOff,
+              color: narrDone ? "#fff" : tc.narrSkipTextOff,
+              border: `1px solid ${narrDone ? "#cc2200" : tc.narrSkipBorderOff}`,
               borderRadius: 8,
               fontSize: 14,
               fontWeight: "bold",
@@ -2552,18 +2895,51 @@ const ZombieGame: React.FC = () => {
   const surveyCard = (step: number, total: number, children: React.ReactNode) => (
     <div style={{ ...S, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem" }}>
       <div style={{ width: "100%", maxWidth: 640, fontFamily: "'Courier New', monospace" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <div style={{ color: "#ff3333", fontSize: 11, fontWeight: "bold", letterSpacing: 2 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 14,
+            paddingRight: HEADER_RIGHT_SAFE_PX,
+            gap: 8,
+            boxSizing: "border-box"
+          }}
+        >
+          <div
+            style={{
+              color: tc.zaiRed,
+              fontSize: 11,
+              fontWeight: "bold",
+              letterSpacing: 2,
+              flexShrink: 0
+            }}
+          >
             ZOMBIE AI ACADEMY
           </div>
-          <div style={{ display: "flex", gap: 6 }}>
+          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
             {Array.from({ length: total }, (_, i) => (
-              <div key={String(i)} style={{ width: 8, height: 8, borderRadius: "50%", background: i < step ? "#ff9900" : i === step - 1 ? "#ff9900" : "#333" }} />
+              <div
+                key={String(i)}
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: i < step ? "#ff9900" : tc.surveyDotIdle
+                }}
+              />
             ))}
           </div>
-          <div style={{ color: "#adadad", fontSize: 11 }}>Q{step}/{total}</div>
+          <div style={{ color: tc.surveyHeaderQ, fontSize: 11, flexShrink: 0 }}>Q{step}/{total}</div>
         </div>
-        <div style={{ background: "#111", border: "1px solid #222", borderRadius: 12, padding: "24px 28px" }}>
+        <div
+          style={{
+            background: tc.surveyCardBg,
+            border: `1px solid ${tc.surveyCardBorder}`,
+            borderRadius: 12,
+            padding: "24px 28px"
+          }}
+        >
           {children}
         </div>
       </div>
@@ -2582,10 +2958,10 @@ const ZombieGame: React.FC = () => {
     <div
       style={{
         marginTop: 12,
-        color: "#ff7a7a",
+        color: tc.surveyErrorText,
         fontSize: 12,
-        background: "#220909",
-        border: "1px solid #553333",
+        background: tc.surveyErrorBg,
+        border: `1px solid ${tc.surveyErrorBorder}`,
         borderRadius: 8,
         padding: "8px 10px"
       }}
@@ -2595,7 +2971,22 @@ const ZombieGame: React.FC = () => {
   ) : null;
 
   const mcOption = (name: string, value: string, current: string | null, set: (v: string) => void) => (
-    <label key={value} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: current === value ? "#ffdd88" : "#ccc", marginBottom: 8, cursor: "pointer", background: current === value ? "#1a1000" : "transparent", borderRadius: 6, padding: "6px 8px", border: current === value ? "1px solid #ff990044" : "1px solid transparent" }}>
+    <label
+      key={value}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        fontSize: 13,
+        color: current === value ? tc.mcSel : tc.mcIdle,
+        marginBottom: 8,
+        cursor: "pointer",
+        background: current === value ? tc.mcBgSel : "transparent",
+        borderRadius: 6,
+        padding: "6px 8px",
+        border: current === value ? `1px solid ${tc.mcBorderSel}` : "1px solid transparent"
+      }}
+    >
       <input type="radio" name={name} value={value} checked={current === value} onChange={() => { set(value); setSurveyError(""); }} style={{ accentColor: "#ff9900" }} />
       <span>{value}</span>
     </label>
@@ -2616,13 +3007,13 @@ const ZombieGame: React.FC = () => {
           alignItems: "flex-start",
           gap: 10,
           fontSize: 13,
-          color: on ? "#ffdd88" : "#ccc",
+          color: on ? tc.mcSel : tc.mcIdle,
           marginBottom: 8,
           cursor: "pointer",
-          background: on ? "#1a1000" : "transparent",
+          background: on ? tc.mcBgSel : "transparent",
           borderRadius: 6,
           padding: "6px 8px",
-          border: on ? "1px solid #ff990044" : "1px solid transparent"
+          border: on ? `1px solid ${tc.mcBorderSel}` : "1px solid transparent"
         }}
       >
         <input
@@ -2642,13 +3033,22 @@ const ZombieGame: React.FC = () => {
       1,
       7,
       <>
-        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
+        <div style={{ color: tc.surveyQAccent, fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
           An AI model is trained to identify and label groups of images. It has been specifically trained on three
           distinct categories: &ldquo;Cats,&rdquo; &ldquo;Dogs,&rdquo; and &ldquo;Plants.&rdquo; If you provide the AI
           with the image below, which contains a mixture of all three, what label is it most likely to assign to the
           entire group?
         </div>
-        <div style={{ background: "#000", borderRadius: 10, padding: 10, border: "1px solid #222", marginBottom: 14, textAlign: "center" }}>
+        <div
+          style={{
+            background: tc.imageWellBg,
+            borderRadius: 10,
+            padding: 10,
+            border: `1px solid ${tc.imageWellBorder}`,
+            marginBottom: 14,
+            textAlign: "center"
+          }}
+        >
           <img src={assetUrl("survey-image-1.png")} alt="Scene with cats, dogs, and plants" style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain" }} />
         </div>
         {["Cats", "Dogs", "Plants"].map((opt) => mcOption("q1", opt, ansQ1, setAnsQ1))}
@@ -2664,7 +3064,7 @@ const ZombieGame: React.FC = () => {
       2,
       7,
       <>
-        <div style={{ color: "#ccc", fontSize: 14, marginBottom: 12 }}>
+        <div style={{ color: tc.surveyBody, fontSize: 14, marginBottom: 12 }}>
           Awesome! The next levels are a bit tricky, so let&apos;s complete some training before we get to it.
         </div>
         {continueBtn(continueQ1b)}
@@ -2678,13 +3078,13 @@ const ZombieGame: React.FC = () => {
       2,
       7,
       <>
-        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 10 }}>
+        <div style={{ color: tc.surveyQAccent, fontSize: 15, fontWeight: "bold", marginBottom: 10 }}>
           The Situation: Imagine you are teaching a robot to recognize animals. You give the robot a big box of photos
           to study:
         </div>
         <ul
           style={{
-            color: "#ccc",
+            color: tc.surveyList,
             fontSize: 14,
             lineHeight: 1.5,
             margin: "0 0 14px 0",
@@ -2694,15 +3094,15 @@ const ZombieGame: React.FC = () => {
           <li>100 pictures of Turtles 🐢</li>
           <li>Only 5 pictures of Pandas 🐼</li>
         </ul>
-        <div style={{ color: "#aaa", fontSize: 13, lineHeight: 1.5, marginBottom: 12 }}>
+        <div style={{ color: tc.surveyMuted, fontSize: 13, lineHeight: 1.5, marginBottom: 12 }}>
           Because there are so many turtles, the robot starts to think everything is a turtle! It keeps missing the
           pandas because it hasn&apos;t seen them enough.
         </div>
-        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 8 }}>
+        <div style={{ color: tc.surveyQAccent, fontSize: 15, fontWeight: "bold", marginBottom: 8 }}>
           Question: If you want the robot to become an expert at spotting those 5 pandas, which of these
           &ldquo;tricks&rdquo; would help the most?
         </div>
-        <div style={{ color: "#d8d8d8", fontSize: 12, marginBottom: 10 }}>Select all that apply.</div>
+        <div style={{ color: tc.surveyHint, fontSize: 12, marginBottom: 10 }}>Select all that apply.</div>
         {SURVEY_Q2_OPTIONS.map((o) => mcCheckboxOption(o.id, o.label))}
         {surveyErrorMsg}
         {continueBtn(continueQ2)}
@@ -2716,7 +3116,7 @@ const ZombieGame: React.FC = () => {
       3,
       7,
       <>
-        <div style={{ color: "#ccc", fontSize: 14, marginBottom: 12 }}>
+        <div style={{ color: tc.surveyBody, fontSize: 14, marginBottom: 12 }}>
           Great job thinking! On to the next level!!
         </div>
         {continueBtn(continueQ2b)}
@@ -2730,7 +3130,7 @@ const ZombieGame: React.FC = () => {
       3,
       7,
       <>
-        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 14 }}>
+        <div style={{ color: tc.surveyQAccent, fontSize: 15, fontWeight: "bold", marginBottom: 14 }}>
           Why does weighted classification help improve fairness in predictions?
         </div>
         {[
@@ -2751,7 +3151,7 @@ const ZombieGame: React.FC = () => {
       4,
       7,
       <>
-        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 14 }}>
+        <div style={{ color: tc.surveyQAccent, fontSize: 15, fontWeight: "bold", marginBottom: 14 }}>
           Imagine a self-driving car is being trained to recognize objects on the road. The computer sees 1,000 pictures
           of Empty Roads and only 2 pictures of People Crossing. If we want to make sure the car never misses a person,
           which class needs a much higher weight?
@@ -2774,11 +3174,20 @@ const ZombieGame: React.FC = () => {
       5,
       7,
       <>
-        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
+        <div style={{ color: tc.surveyQAccent, fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
           Based on these sliders, what is this image telling us about how the AI prioritizes information to classify
           something?
         </div>
-        <div style={{ background: "#000", borderRadius: 10, padding: 10, border: "1px solid #222", marginBottom: 14, textAlign: "center" }}>
+        <div
+          style={{
+            background: tc.imageWellBg,
+            borderRadius: 10,
+            padding: 10,
+            border: `1px solid ${tc.imageWellBorder}`,
+            marginBottom: 14,
+            textAlign: "center"
+          }}
+        >
           <img
             src={assetUrl("post survey 2.png")}
             alt="Feature weights: Skin, Walk, and Body Temp sliders with values 7, 4, and 10"
@@ -2795,10 +3204,10 @@ const ZombieGame: React.FC = () => {
           style={{
             width: "100%",
             minHeight: 100,
-            background: "#0a0a0a",
+            background: tc.textareaBg,
             borderRadius: 8,
-            border: "1px solid #333",
-            color: "#eee",
+            border: `1px solid ${tc.textareaBorder}`,
+            color: tc.textareaText,
             padding: "8px 10px",
             fontFamily: "'Courier New', monospace",
             fontSize: 13,
@@ -2818,7 +3227,7 @@ const ZombieGame: React.FC = () => {
       6,
       7,
       <>
-        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 14 }}>
+        <div style={{ color: tc.surveyQAccent, fontSize: 15, fontWeight: "bold", marginBottom: 14 }}>
           If I had to explain to my friend what &lsquo;weight&rsquo; is in AI, I would tell them that it means...
         </div>
         <textarea
@@ -2831,10 +3240,10 @@ const ZombieGame: React.FC = () => {
           style={{
             width: "100%",
             minHeight: 120,
-            background: "#0a0a0a",
+            background: tc.textareaBg,
             borderRadius: 8,
-            border: "1px solid #333",
-            color: "#eee",
+            border: `1px solid ${tc.textareaBorder}`,
+            color: tc.textareaText,
             padding: "8px 10px",
             fontFamily: "'Courier New', monospace",
             fontSize: 13,
@@ -2854,14 +3263,14 @@ const ZombieGame: React.FC = () => {
       7,
       7,
       <>
-        <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
+        <div style={{ color: tc.surveyQAccent, fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
           How confident are you in understanding how AI makes decisions?
         </div>
-        <div style={{ color: "#d8d8d8", fontSize: 12, marginBottom: 16 }}>
+        <div style={{ color: tc.surveyHint, fontSize: 12, marginBottom: 16 }}>
           Scale: 1 = not confident at all &mdash; 10 = very confident. There is no wrong answer.
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-          <span style={{ fontSize: 12, color: "#d0d0d0" }}>1</span>
+          <span style={{ fontSize: 12, color: tc.surveySliderEnd }}>1</span>
           <input
             type="range"
             min={1}
@@ -2873,9 +3282,9 @@ const ZombieGame: React.FC = () => {
             }}
             style={{ flex: 1, accentColor: "#ff9900" }}
           />
-          <span style={{ fontSize: 12, color: "#d0d0d0" }}>10</span>
+          <span style={{ fontSize: 12, color: tc.surveySliderEnd }}>10</span>
         </div>
-        <div style={{ fontSize: 16, color: "#ffcc66", fontWeight: "bold", marginBottom: 20 }}>
+        <div style={{ fontSize: 16, color: tc.surveyValueBold, fontWeight: "bold", marginBottom: 20 }}>
           Your answer: {ansQ7} / 10
         </div>
         {surveyErrorMsg}
@@ -2898,13 +3307,14 @@ const ZombieGame: React.FC = () => {
           onOpenLeaderboard={() => setShowLeaderboardOverlay(true)}
           onSelectAvatar={(id) => setAvatar(id)}
           timerMs={gameTimerMs}
+          theme={theme}
         />
         {showLeaderboardOverlay && (
           <div
             style={{
               position: "fixed",
               inset: 0,
-              background: "rgba(0,0,0,0.7)",
+              background: tc.overlayScrim,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -2913,9 +3323,9 @@ const ZombieGame: React.FC = () => {
           >
             <div
               style={{
-                background: "#111",
+                background: tc.overlayModalBg,
                 borderRadius: 12,
-                border: "1px solid #333",
+                border: `1px solid ${tc.overlayModalBorder}`,
                 padding: "18px 20px",
                 width: "100%",
                 maxWidth: 420,
@@ -2945,9 +3355,9 @@ const ZombieGame: React.FC = () => {
                   onClick={() => setShowLeaderboardOverlay(false)}
                   style={{
                     background: "transparent",
-                    border: "1px solid #444",
+                    border: `1px solid ${tc.overlayCloseBorder}`,
                     borderRadius: 999,
-                    color: "#aaa",
+                    color: tc.overlayCloseText,
                     fontSize: 11,
                     padding: "4px 10px",
                     cursor: "pointer"
@@ -2960,16 +3370,16 @@ const ZombieGame: React.FC = () => {
               {roundScores.length > 0 && (
                 <div
                   style={{
-                    background: "#181818",
+                    background: tc.overlaySection,
                     borderRadius: 8,
                     padding: "10px 12px",
-                    border: "1px solid #333",
+                    border: `1px solid ${tc.overlaySectionBorder}`,
                     marginBottom: 12
                   }}
                 >
                   <div
                     style={{
-                      color: "#d8d8d8",
+                      color: tc.overlayMuted,
                       fontSize: 11,
                       marginBottom: 4
                     }}
@@ -2981,7 +3391,7 @@ const ZombieGame: React.FC = () => {
                       display: "flex",
                       justifyContent: "space-between",
                       fontSize: 12,
-                      color: "#ddd"
+                      color: tc.lbName
                     }}
                   >
                     <span>
@@ -3002,7 +3412,7 @@ const ZombieGame: React.FC = () => {
 
               <div
                 style={{
-                  color: "#c6c6c6",
+                  color: tc.lbSub,
                   fontSize: 10,
                   letterSpacing: 2,
                   marginBottom: 6
@@ -3013,7 +3423,7 @@ const ZombieGame: React.FC = () => {
               {leaderboard.length === 0 ? (
                 <div
                   style={{
-                    color: "#adadad",
+                    color: tc.lbEmpty,
                     fontSize: 12,
                     textAlign: "center",
                     padding: 16
@@ -3032,13 +3442,11 @@ const ZombieGame: React.FC = () => {
                       style={{
                         display: "flex",
                         alignItems: "center",
-                        background: isMe ? "#181000" : "#151515",
+                        background: isMe ? tc.overlayRowYou : tc.overlayRowOther,
                         borderRadius: 8,
                         padding: "6px 10px",
                         marginBottom: 4,
-                        border: isMe
-                          ? "1px solid #ff990055"
-                          : "1px solid #222",
+                        border: `1px solid ${isMe ? tc.lbRowBorderYou : tc.overlayRowBorder}`,
                         gap: 8
                       }}
                     >
@@ -3047,7 +3455,7 @@ const ZombieGame: React.FC = () => {
                           width: 26,
                           textAlign: "center",
                           fontSize: 14,
-                          color: "#d0d0d0"
+                          color: tc.overlayMedal
                         }}
                       >
                         {medal}
@@ -3055,7 +3463,7 @@ const ZombieGame: React.FC = () => {
                       <div style={{ flex: 1 }}>
                         <div
                           style={{
-                            color: isMe ? "#ffdd88" : "#ddd",
+                            color: isMe ? tc.lbNameYou : tc.lbName,
                             fontSize: 12
                           }}
                         >
@@ -3064,7 +3472,7 @@ const ZombieGame: React.FC = () => {
                         </div>
                         <div
                           style={{
-                            color: "#c6c6c6",
+                            color: tc.lbSub,
                             fontSize: 10
                           }}
                         >
@@ -3110,17 +3518,17 @@ const ZombieGame: React.FC = () => {
             {"⭐".repeat(stars)}
             {"☆".repeat(3 - stars)}
           </div>
-          <div style={{ fontSize: 20, color: "#fff", fontWeight: "bold" }}>
+          <div style={{ fontSize: 20, color: tc.roundResultTitle, fontWeight: "bold" }}>
             Round {round + 1} Complete!
           </div>
-          <div style={{ color: "#adadad", fontSize: 11, marginTop: 4 }}>
+          <div style={{ color: tc.roundResultSub, fontSize: 11, marginTop: 4 }}>
             {ROUNDS_DATA[round].name}
           </div>
         </div>
         <div
           style={{
-            background: "#111",
-            border: "1px solid #222",
+            background: tc.rrCardBg,
+            border: `1px solid ${tc.rrCardBorder}`,
             borderRadius: 12,
             padding: 22,
             width: "100%",
@@ -3144,11 +3552,11 @@ const ZombieGame: React.FC = () => {
               <div
                 key={s.label}
                 style={{
-                  background: "#0a0a0a",
+                  background: tc.rrStatBox,
                   borderRadius: 8,
                   padding: "12px 8px",
                   textAlign: "center",
-                  border: "1px solid #1e1e1e"
+                  border: `1px solid ${tc.rrStatBoxBorder}`
                 }}
               >
                 <div
@@ -3163,7 +3571,7 @@ const ZombieGame: React.FC = () => {
                 <div
                   style={{
                     fontSize: 10,
-                    color: "#adadad",
+                    color: tc.rrStatLabel,
                     marginTop: 3
                   }}
                 >
@@ -3174,10 +3582,10 @@ const ZombieGame: React.FC = () => {
           </div>
           <div
             style={{
-              background: "#0a0a0a",
+              background: tc.rrAccSection,
               borderRadius: 8,
               padding: "10px 14px",
-              border: "1px solid #1e1e1e",
+              border: `1px solid ${tc.rrAccSectionBorder}`,
               marginBottom: 14
             }}
           >
@@ -3188,14 +3596,14 @@ const ZombieGame: React.FC = () => {
                 marginBottom: 5
               }}
             >
-              <span style={{ color: "#bcbcbc", fontSize: 12 }}>Accuracy</span>
+              <span style={{ color: tc.statLabel, fontSize: 12 }}>Accuracy</span>
               <span style={{ color: accCol, fontWeight: "bold" }}>
                 {roundResult.acc}%
               </span>
             </div>
             <div
               style={{
-                background: "#1a1a1a",
+                background: tc.rrTrack,
                 borderRadius: 4,
                 height: 7,
                 overflow: "hidden"
@@ -3218,10 +3626,10 @@ const ZombieGame: React.FC = () => {
               alignItems: "center"
             }}
           >
-            <span style={{ color: "#bcbcbc", fontSize: 13 }}>Round score</span>
+            <span style={{ color: tc.statLabel, fontSize: 13 }}>Round score</span>
             <span
               style={{
-                color: "#ff9900",
+                color: tc.perfHeader,
                 fontSize: 20,
                 fontWeight: "bold"
               }}
@@ -3232,8 +3640,8 @@ const ZombieGame: React.FC = () => {
         </div>
         <div
           style={{
-            background: "#0a1520",
-            border: "1px solid #1a3a5a",
+            background: tc.lessonBg,
+            border: `1px solid ${tc.lessonBorder}`,
             borderRadius: 10,
             padding: "12px 18px",
             maxWidth: 420,
@@ -3244,7 +3652,7 @@ const ZombieGame: React.FC = () => {
           <div
             style={{
               fontSize: 10,
-              color: "#4a9ab5",
+              color: tc.lessonHead,
               letterSpacing: 2,
               marginBottom: 5
             }}
@@ -3253,7 +3661,7 @@ const ZombieGame: React.FC = () => {
           </div>
           <div
             style={{
-              color: "#7ab5d5",
+              color: tc.lessonText,
               fontSize: 12,
               lineHeight: 1.7
             }}
@@ -3266,9 +3674,9 @@ const ZombieGame: React.FC = () => {
             onClick={handleReplayRound}
             style={{
               padding: "12px 28px",
-              background: "#1a1a1a",
-              color: "#ffdd77",
-              border: "1px solid #665200",
+              background: tc.replayBg,
+              color: tc.replayText,
+              border: `1px solid ${tc.replayBorder}`,
               borderRadius: 8,
               fontSize: 14,
               fontWeight: "bold",
@@ -3318,8 +3726,8 @@ const ZombieGame: React.FC = () => {
       <div style={{ ...S, paddingBottom: "2rem" }}>
         <div
           style={{
-            background: "#111",
-            borderBottom: "1px solid #1e1e1e",
+            background: tc.lbFullHeaderBg,
+            borderBottom: `1px solid ${tc.lbFullHeaderBorder}`,
             padding: "16px 20px",
             textAlign: "center"
           }}
@@ -3328,7 +3736,7 @@ const ZombieGame: React.FC = () => {
           <div
             style={{
               fontSize: 18,
-              color: "#ff9900",
+              color: tc.perfHeader,
               fontWeight: "bold",
               letterSpacing: 3
             }}
@@ -3337,7 +3745,7 @@ const ZombieGame: React.FC = () => {
           </div>
           <div
             style={{
-              color: "#9a9a9a",
+              color: tc.perfSub,
               fontSize: 10,
               marginTop: 3,
               letterSpacing: 3
@@ -3356,8 +3764,8 @@ const ZombieGame: React.FC = () => {
           {roundScores.length > 0 && (
             <div
               style={{
-                background: "#111",
-                border: "1px solid #ff990030",
+                background: tc.lbPerfOuter,
+                border: `1px solid ${tc.lbPerfBorder}`,
                 borderRadius: 12,
                 padding: "16px 18px",
                 marginBottom: 18
@@ -3365,7 +3773,7 @@ const ZombieGame: React.FC = () => {
             >
               <div
                 style={{
-                  color: "#ff9900",
+                  color: tc.perfHeader,
                   fontSize: 10,
                   letterSpacing: 2,
                   marginBottom: 10
@@ -3401,7 +3809,7 @@ const ZombieGame: React.FC = () => {
                   <div
                     key={s.l}
                     style={{
-                      background: "#0a0a0a",
+                      background: tc.lbStatTile,
                       borderRadius: 8,
                       padding: "10px 6px",
                       textAlign: "center"
@@ -3419,7 +3827,7 @@ const ZombieGame: React.FC = () => {
                     <div
                       style={{
                         fontSize: 9,
-                        color: "#9a9a9a",
+                        color: tc.perfSub,
                         marginTop: 3
                       }}
                     >
@@ -3434,7 +3842,7 @@ const ZombieGame: React.FC = () => {
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    background: "#0a0a0a",
+                    background: tc.lbRoundRow,
                     borderRadius: 8,
                     padding: "8px 12px",
                     marginBottom: 6,
@@ -3445,10 +3853,10 @@ const ZombieGame: React.FC = () => {
                     {"⭐".repeat(r.acc >= 80 ? 3 : r.acc >= 60 ? 2 : 1)}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ color: "#bbb", fontSize: 12 }}>
+                    <div style={{ color: tc.lbRoundName, fontSize: 12 }}>
                       {ROUNDS_DATA[i].name}
                     </div>
-                    <div style={{ color: "#adadad", fontSize: 10 }}>
+                    <div style={{ color: tc.lbRoundAcc, fontSize: 10 }}>
                       Accuracy: {r.acc}%
                     </div>
                   </div>
@@ -3467,7 +3875,7 @@ const ZombieGame: React.FC = () => {
           )}
           <div
             style={{
-              color: "#9a9a9a",
+              color: tc.lbAllTime,
               fontSize: 10,
               letterSpacing: 2,
               marginBottom: 9
@@ -3478,7 +3886,7 @@ const ZombieGame: React.FC = () => {
           {leaderboard.length === 0 ? (
             <div
               style={{
-                color: "#222",
+                color: tc.lbEmptyMsg,
                 textAlign: "center",
                 padding: 28,
                 fontSize: 12
@@ -3497,10 +3905,8 @@ const ZombieGame: React.FC = () => {
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    background: isMe ? "#130f00" : "#111",
-                    border: `1px solid ${
-                      isMe ? "#ff990044" : "#1e1e1e"
-                    }`,
+                    background: isMe ? tc.lbRowBgYou : tc.lbRowBg,
+                    border: `1px solid ${isMe ? tc.lbRowBorderYou : tc.lbRowBorder}`,
                     borderRadius: 8,
                     padding: "9px 14px",
                     marginBottom: 6,
@@ -3512,7 +3918,7 @@ const ZombieGame: React.FC = () => {
                       width: 26,
                       textAlign: "center",
                       fontSize: i < 3 ? 15 : 12,
-                      color: "#bcbcbc",
+                      color: tc.statLabel,
                       fontWeight: "bold"
                     }}
                   >
@@ -3521,7 +3927,7 @@ const ZombieGame: React.FC = () => {
                   <div style={{ flex: 1 }}>
                     <div
                       style={{
-                        color: isMe ? "#ff9900" : "#bbb",
+                        color: isMe ? tc.lbNameYou : tc.lbNameOther,
                         fontSize: 13,
                         fontWeight: isMe ? "bold" : "normal"
                       }}
@@ -3531,7 +3937,7 @@ const ZombieGame: React.FC = () => {
                     </div>
                     <div
                       style={{
-                        color: "#9a9a9a",
+                        color: tc.perfSub,
                         fontSize: 10
                       }}
                     >
