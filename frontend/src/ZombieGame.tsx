@@ -1109,8 +1109,8 @@ function GameCanvas({
                   marginTop: 2
                 }}
               >
-                <span>low</span>
-                <span>high</span>
+                <span>less important</span>
+                <span>important</span>
               </div>
             </div>
           ))}
