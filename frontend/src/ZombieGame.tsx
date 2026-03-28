@@ -283,6 +283,20 @@ async function fetchJsonOrThrow(url: string, init?: RequestInit) {
   return null;
 }
 
+const AUTH_TOKEN_KEY = "zai-token";
+
+function fetchJsonAuthed(url: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const t = window.localStorage.getItem(AUTH_TOKEN_KEY);
+  if (t) {
+    headers.set("Authorization", `Bearer ${t}`);
+  }
+  return fetchJsonOrThrow(url, { ...init, headers });
+}
+
 // ── Canvas Game Component ─────────────────────────────────────────────────────
 export type ZombieUiTheme = "dark" | "light";
 
@@ -1516,6 +1530,7 @@ function Typewriter({ text, onDone }: TypewriterProps) {
 
 // ── Main App ─────────────────────────────────────────────────────────────────
 type Screen =
+  | "auth"
   | "intro"
   | "tutorial"
   | "narration"
@@ -1537,7 +1552,12 @@ type ZombieGameProps = {
 };
 
 const ZombieGame: React.FC<ZombieGameProps> = ({ theme = "dark" }) => {
-  const [screen, setScreen] = useState<Screen>("intro");
+  const [screen, setScreen] = useState<Screen>("auth");
+  const [authReady, setAuthReady] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [authError, setAuthError] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [nameErr, setNameErr] = useState("");
@@ -1578,6 +1598,32 @@ const ZombieGame: React.FC<ZombieGameProps> = ({ theme = "dark" }) => {
     loadLB().then(setLeaderboard);
   }, []);
 
+  useEffect(() => {
+    void (async () => {
+      const t = window.localStorage.getItem(AUTH_TOKEN_KEY);
+      if (!t) {
+        setScreen("auth");
+        setAuthReady(true);
+        return;
+      }
+      try {
+        const me = await fetchJsonOrThrow(`${API_BASE}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${t}` }
+        });
+        const p = me.player as { id: string; name: string; lastName: string };
+        setFirstName(p.name);
+        setLastName(p.lastName);
+        setPlayerId(p.id);
+        setScreen("intro");
+      } catch {
+        window.localStorage.removeItem(AUTH_TOKEN_KEY);
+        setScreen("auth");
+      } finally {
+        setAuthReady(true);
+      }
+    })();
+  }, []);
+
   // Send slider state to the Python AI so it knows which features you emphasize.
   useEffect(() => {
     if (screen !== "game") return;
@@ -1616,17 +1662,95 @@ const ZombieGame: React.FC<ZombieGameProps> = ({ theme = "dark" }) => {
     lastWeightApiFeature
   ]);
 
+  const applyAuthSuccess = (data: {
+    token: string;
+    playerId: string;
+    player: { name: string; lastName?: string };
+  }) => {
+    window.localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+    setPlayerId(data.playerId);
+    setFirstName(data.player.name);
+    setLastName((data.player.lastName ?? "").trim());
+    setAuthError("");
+    setPassword("");
+    setConfirmPassword("");
+    setScreen("intro");
+  };
+
+  const handleAuthRegister = async () => {
+    setAuthError("");
+    if (!firstName.trim() || !lastName.trim()) {
+      setAuthError("Enter first name and last initial.");
+      return;
+    }
+    if (password.length < 8) {
+      setAuthError("Password must be at least 8 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setAuthError("Passwords do not match.");
+      return;
+    }
+    try {
+      const data = await fetchJsonOrThrow(`${API_BASE}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: firstName.trim(),
+          lastName: lastName.trim().slice(0, 1),
+          password
+        })
+      });
+      applyAuthSuccess(data as {
+        token: string;
+        playerId: string;
+        player: { name: string; lastName?: string };
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "";
+      setAuthError(
+        msg.includes("409")
+          ? "An account with this name already exists. Try logging in."
+          : "Registration failed. Check your connection or try logging in."
+      );
+    }
+  };
+
+  const handleAuthLogin = async () => {
+    setAuthError("");
+    if (!firstName.trim() || !lastName.trim() || !password) {
+      setAuthError("Enter first name, last initial, and password.");
+      return;
+    }
+    try {
+      const data = await fetchJsonOrThrow(`${API_BASE}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: firstName.trim(),
+          lastName: lastName.trim().slice(0, 1),
+          password
+        })
+      });
+      applyAuthSuccess(data as {
+        token: string;
+        playerId: string;
+        player: { name: string; lastName?: string };
+      });
+    } catch {
+      setAuthError("Invalid name or password.");
+    }
+  };
+
   const handleStart = async () => {
     if (!avatar) {
       setNameErr("Please choose your bot avatar!");
       return;
     }
-    if (!firstName.trim()) {
-      setNameErr("Please enter your first name!");
-      return;
-    }
-    if (!lastName.trim()) {
-      setNameErr("Please enter your last name initial!");
+    const t = window.localStorage.getItem(AUTH_TOKEN_KEY);
+    if (!playerId || !t) {
+      setNameErr("Please sign in.");
+      setScreen("auth");
       return;
     }
     setNameErr("");
@@ -1640,24 +1764,15 @@ const ZombieGame: React.FC<ZombieGameProps> = ({ theme = "dark" }) => {
     setAnsQ4(null); setAnsQ5(""); setAnsQ6(""); setAnsQ7(5);
     setLastWeightApiFeature(null);
     try {
-      const pData = await fetchJsonOrThrow(`${API_BASE}/api/player`, {
+      const sData = await fetchJsonAuthed(`${API_BASE}/api/session/start`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: firstName.trim(),
-          lastName: lastName.trim(),
-          avatar
-        })
-      });
-      const pid = pData.playerId as string;
-      setPlayerId(pid);
-      const sData = await fetchJsonOrThrow(`${API_BASE}/api/session/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId: pid, avatar })
+        body: JSON.stringify({ playerId, avatar })
       });
       setSessionId(sData.sessionId as string);
     } catch {
+      setNameErr("Could not start session. Sign in again.");
+      setScreen("auth");
+      return;
     }
     setScreen("tutorial");
   };
@@ -1728,9 +1843,8 @@ const ZombieGame: React.FC<ZombieGameProps> = ({ theme = "dark" }) => {
     if (sid) {
       void (async () => {
         try {
-          await fetchJsonOrThrow(`${API_BASE}/api/session/${sid}/round`, {
+          await fetchJsonAuthed(`${API_BASE}/api/session/${sid}/round`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               roundNumber: round + 1,
               sceneName: rd.name,
@@ -1779,10 +1893,14 @@ const ZombieGame: React.FC<ZombieGameProps> = ({ theme = "dark" }) => {
     setScreen("game");
   };
 
-  const restart = () => {
-    setScreen("intro");
+  const logoutAndGoAuth = () => {
+    window.localStorage.removeItem(AUTH_TOKEN_KEY);
+    setPlayerId(null);
+    setSessionId(null);
     setFirstName("");
     setLastName("");
+    setPassword("");
+    setConfirmPassword("");
     setRound(0);
     setNarrLine(0);
     setNarrDone(false);
@@ -1790,11 +1908,48 @@ const ZombieGame: React.FC<ZombieGameProps> = ({ theme = "dark" }) => {
     setRoundResult(null);
     setWeights({ s: 7, w: 4, b: 5 });
     setLastWeightApiFeature(null);
-    setPlayerId(null);
-    setSessionId(null);
     setSurveyError("");
     setAnsQ1(null); setAnsQ2([]); setAnsQ3(null);
     setAnsQ4(null); setAnsQ5(""); setAnsQ6(""); setAnsQ7(5);
+    setAvatar(null);
+    setShowAvatarPicker(false);
+    setAuthError("");
+    setAuthMode("login");
+    setScreen("auth");
+  };
+
+  /** New `sessionId` = new row in `sessions` (and surveys/leaderboard) for this playthrough—same player, distinct run. */
+  const playAgainFullGame = async () => {
+    setRound(0);
+    setNarrLine(0);
+    setNarrDone(false);
+    setRoundScores([]);
+    setRoundResult(null);
+    setRoundGameDurations([]);
+    setSurveyError("");
+    setAnsQ1(null); setAnsQ2([]); setAnsQ3(null);
+    setAnsQ4(null); setAnsQ5(""); setAnsQ6(""); setAnsQ7(5);
+    setSessionId(null);
+    setLastWeightApiFeature(null);
+    roundGameStartRef.current = null;
+    setGameTimerMs(0);
+    const t = window.localStorage.getItem(AUTH_TOKEN_KEY);
+    if (!playerId || !t) {
+      setScreen("auth");
+      return;
+    }
+    const av = avatar || "scout";
+    try {
+      const sData = await fetchJsonAuthed(`${API_BASE}/api/session/start`, {
+        method: "POST",
+        body: JSON.stringify({ playerId, avatar: av })
+      });
+      setSessionId(sData.sessionId as string);
+    } catch {
+      setScreen("auth");
+      return;
+    }
+    setScreen("tutorial");
   };
 
   const continueQ1 = () => {
@@ -1878,9 +2033,8 @@ const ZombieGame: React.FC<ZombieGameProps> = ({ theme = "dark" }) => {
     try {
       const sid = sessionId;
       if (sid) {
-        await fetchJsonOrThrow(`${API_BASE}/api/session/${sid}/survey`, {
+        await fetchJsonAuthed(`${API_BASE}/api/session/${sid}/survey`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             q1_graph_meaning: ansQ1,
             q2_weight_fairness: [...ansQ2].sort().join(","),
@@ -1891,9 +2045,8 @@ const ZombieGame: React.FC<ZombieGameProps> = ({ theme = "dark" }) => {
             q7_decision_confidence: ansQ7
           })
         });
-        await fetchJsonOrThrow(`${API_BASE}/api/session/${sid}/finish`, {
+        await fetchJsonAuthed(`${API_BASE}/api/session/${sid}/finish`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ totalScore: total, avgAccuracy: avgAcc })
         });
         const lbData = await fetchJsonOrThrow(`${API_BASE}/api/leaderboard?limit=10`);
@@ -2206,6 +2359,248 @@ const ZombieGame: React.FC<ZombieGameProps> = ({ theme = "dark" }) => {
     };
   }, [theme]);
 
+  if (!authReady) {
+    return (
+      <div
+        style={{
+          ...S,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "100vh"
+        }}
+      >
+        <div style={{ color: theme === "light" ? "#555" : "#888", fontSize: 14 }}>
+          Loading…
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === "auth") {
+    return (
+      <div
+        style={{
+          ...S,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "2rem"
+        }}
+      >
+        <div style={{ textAlign: "center", marginBottom: 20 }}>
+          <div style={{ fontSize: 44, marginBottom: 6 }}>🧟</div>
+          <div
+            style={{
+              fontSize: 22,
+              fontWeight: "bold",
+              color: tc.zaiRed,
+              letterSpacing: 2
+            }}
+          >
+            ZOMBIE AI ACADEMY
+          </div>
+          <div style={{ fontSize: 11, color: tc.subtitle, marginTop: 6 }}>
+            Sign in or create an account
+          </div>
+        </div>
+        <div
+          style={{
+            background: tc.panel,
+            border: `1px solid ${tc.panelBorder}`,
+            borderRadius: 12,
+            padding: "22px 24px",
+            width: "100%",
+            maxWidth: 380
+          }}
+        >
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode("login");
+                setAuthError("");
+              }}
+              style={{
+                flex: 1,
+                padding: "8px 0",
+                borderRadius: 8,
+                border:
+                  authMode === "login"
+                    ? `1px solid ${tc.introBlurbOrange}`
+                    : `1px solid ${tc.panelBorder2}`,
+                background: authMode === "login" ? tc.mcBgSel : "transparent",
+                color: authMode === "login" ? tc.mcSel : tc.body,
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: "bold"
+              }}
+            >
+              Log in
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode("register");
+                setAuthError("");
+              }}
+              style={{
+                flex: 1,
+                padding: "8px 0",
+                borderRadius: 8,
+                border:
+                  authMode === "register"
+                    ? `1px solid ${tc.introBlurbOrange}`
+                    : `1px solid ${tc.panelBorder2}`,
+                background: authMode === "register" ? tc.mcBgSel : "transparent",
+                color: authMode === "register" ? tc.mcSel : tc.body,
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: "bold"
+              }}
+            >
+              Register
+            </button>
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ color: tc.label, fontSize: 11, marginBottom: 4 }}>FIRST NAME</div>
+            <input
+              value={firstName}
+              onChange={(e) => {
+                setFirstName(e.target.value);
+                setAuthError("");
+              }}
+              placeholder="e.g. Alex"
+              autoComplete="given-name"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                background: tc.inputBg,
+                border: `1px solid ${tc.inputBorder}`,
+                borderRadius: 8,
+                color: tc.inputText,
+                fontSize: 14,
+                boxSizing: "border-box",
+                fontFamily: "'Courier New',monospace"
+              }}
+            />
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ color: tc.label, fontSize: 11, marginBottom: 4 }}>LAST NAME INITIAL</div>
+            <input
+              value={lastName}
+              onChange={(e) => {
+                setLastName(e.target.value.slice(0, 1));
+                setAuthError("");
+              }}
+              placeholder="e.g. R"
+              maxLength={1}
+              autoComplete="family-name"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                background: tc.inputBg,
+                border: `1px solid ${tc.inputBorder}`,
+                borderRadius: 8,
+                color: tc.inputText,
+                fontSize: 14,
+                boxSizing: "border-box",
+                fontFamily: "'Courier New',monospace"
+              }}
+            />
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ color: tc.label, fontSize: 11, marginBottom: 4 }}>PASSWORD</div>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setAuthError("");
+              }}
+              placeholder={authMode === "register" ? "At least 8 characters" : "Your password"}
+              autoComplete={authMode === "register" ? "new-password" : "current-password"}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                background: tc.inputBg,
+                border: `1px solid ${tc.inputBorder}`,
+                borderRadius: 8,
+                color: tc.inputText,
+                fontSize: 14,
+                boxSizing: "border-box",
+                fontFamily: "'Courier New',monospace"
+              }}
+            />
+          </div>
+          {authMode === "register" && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ color: tc.label, fontSize: 11, marginBottom: 4 }}>
+                CONFIRM PASSWORD
+              </div>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value);
+                  setAuthError("");
+                }}
+                placeholder="Repeat password"
+                autoComplete="new-password"
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  background: tc.inputBg,
+                  border: `1px solid ${tc.inputBorder}`,
+                  borderRadius: 8,
+                  color: tc.inputText,
+                  fontSize: 14,
+                  boxSizing: "border-box",
+                  fontFamily: "'Courier New',monospace"
+                }}
+              />
+            </div>
+          )}
+          {authError && (
+            <div
+              style={{
+                color: tc.surveyErrorText,
+                fontSize: 12,
+                marginBottom: 10,
+                background: tc.surveyErrorBg,
+                border: `1px solid ${tc.surveyErrorBorder}`,
+                borderRadius: 8,
+                padding: "8px 10px"
+              }}
+            >
+              {authError}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={authMode === "register" ? handleAuthRegister : handleAuthLogin}
+            style={{
+              width: "100%",
+              padding: "12px 0",
+              background: "#cc2200",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: "bold",
+              cursor: "pointer",
+              fontFamily: "'Courier New',monospace",
+              letterSpacing: 1
+            }}
+          >
+            {authMode === "register" ? "CREATE ACCOUNT →" : "LOG IN →"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // INTRO
   if (screen === "intro") {
     return (
@@ -2280,8 +2675,8 @@ const ZombieGame: React.FC<ZombieGameProps> = ({ theme = "dark" }) => {
                 width: 64,
                 height: 64,
                 borderRadius: "50%",
-                border: "2px solid #8a8a8a",
-                background: "#202020",
+                border: `2px solid ${tc.avatarBtnBorder}`,
+                background: tc.avatarBtnBg,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -2388,76 +2783,20 @@ const ZombieGame: React.FC<ZombieGameProps> = ({ theme = "dark" }) => {
               </div>
             )}
           </div>
-          <div style={{ marginBottom: 12 }}>
-            <div
-              style={{
-                color: tc.label,
-                fontSize: 11,
-                letterSpacing: 1,
-                marginBottom: 6
-              }}
-            >
-              FIRST NAME
-            </div>
-            <input
-              value={firstName}
-              onChange={(e) => {
-                setFirstName(e.target.value);
-                setNameErr("");
-              }}
-              onKeyDown={(e) => e.key === "Enter" && handleStart()}
-              placeholder="e.g. Alex"
-              style={{
-                display: "block",
-                width: "100%",
-                padding: "10px 14px",
-                background: tc.inputBg,
-                border: `1px solid ${tc.inputBorder}`,
-                borderRadius: 8,
-                color: tc.inputText,
-                fontSize: 14,
-                fontFamily: "'Courier New',monospace",
-                outline: "none",
-                boxSizing: "border-box"
-              }}
-            />
+          <div
+            style={{
+              color: tc.body,
+              fontSize: 12,
+              marginBottom: 14,
+              textAlign: "center",
+              lineHeight: 1.5
+            }}
+          >
+            Signed in as{" "}
+            <span style={{ fontWeight: "bold", color: tc.label }}>
+              {displayName || "Cadet"}
+            </span>
           </div>
-          <div style={{ marginBottom: 14 }}>
-            <div
-              style={{
-                color: tc.label,
-                fontSize: 11,
-                letterSpacing: 1,
-                marginBottom: 6
-              }}
-            >
-              LAST NAME INITIAL
-            </div>
-            <input
-              value={lastName}
-              onChange={(e) => {
-                setLastName(e.target.value.slice(0, 1));
-                setNameErr("");
-              }}
-              onKeyDown={(e) => e.key === "Enter" && handleStart()}
-              placeholder="e.g. R"
-              maxLength={1}
-              style={{
-                display: "block",
-                width: "100%",
-                padding: "10px 14px",
-                background: tc.inputBg,
-                border: `1px solid ${tc.inputBorder}`,
-                borderRadius: 8,
-                color: tc.inputText,
-                fontSize: 14,
-                fontFamily: "'Courier New',monospace",
-                outline: "none",
-                boxSizing: "border-box"
-              }}
-            />
-          </div>
-          {/* old inline avatar row removed */}
           {nameErr && (
             <div
               style={{
@@ -2486,6 +2825,22 @@ const ZombieGame: React.FC<ZombieGameProps> = ({ theme = "dark" }) => {
             }}
           >
             BEGIN MISSION →
+          </button>
+          <button
+            type="button"
+            onClick={logoutAndGoAuth}
+            style={{
+              marginTop: 10,
+              width: "100%",
+              background: "transparent",
+              border: "none",
+              color: tc.viewLbText,
+              fontSize: 11,
+              cursor: "pointer",
+              textDecoration: "underline"
+            }}
+          >
+            Sign out
           </button>
         </div>
         {leaderboard.length > 0 && (
@@ -3965,7 +4320,8 @@ const ZombieGame: React.FC<ZombieGameProps> = ({ theme = "dark" }) => {
             }}
           >
             <button
-              onClick={restart}
+              type="button"
+              onClick={() => void playAgainFullGame()}
               style={{
                 flex: 1,
                 padding: "12px 0",
@@ -3980,6 +4336,24 @@ const ZombieGame: React.FC<ZombieGameProps> = ({ theme = "dark" }) => {
               }}
             >
               Play Again 🔄
+            </button>
+            <button
+              type="button"
+              onClick={logoutAndGoAuth}
+              style={{
+                flex: 1,
+                padding: "12px 0",
+                background: "transparent",
+                color: tc.viewLbText,
+                border: `1px solid ${tc.viewLbBorder}`,
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: "bold",
+                cursor: "pointer",
+                fontFamily: "'Courier New',monospace"
+              }}
+            >
+              Log out
             </button>
           </div>
         </div>

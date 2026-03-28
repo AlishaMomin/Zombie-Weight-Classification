@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 import psycopg2
+from psycopg2 import IntegrityError
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from psycopg2.extras import Json
@@ -15,6 +16,7 @@ from ai_classifier import (
   focus_from_weights,
   model_summary,
 )
+from auth_util import decode_player_id, hash_password, issue_token, verify_password_hash
 from db import DatabaseConfigError, get_db
 
 
@@ -85,6 +87,7 @@ def _leaderboard_payload(row: Dict[str, Any]) -> Dict[str, Any]:
 
 def _round_payload(row: Dict[str, Any]) -> Dict[str, Any]:
   return {
+    "id": int(row["id"]) if row.get("id") is not None else None,
     "roundNumber": int(row["round_number"]),
     "sceneName": row["scene_name"],
     "difficulty": row["difficulty"],
@@ -127,6 +130,24 @@ def _get_player_or_404(cur, player_id: str) -> Dict[str, Any]:
   if not row:
     raise LookupError("player not found")
   return row
+
+
+def _bearer_player_id() -> str | None:
+  header = (request.headers.get("Authorization") or "").strip()
+  if not header.lower().startswith("bearer "):
+    return None
+  token = header[7:].strip()
+  if not token:
+    return None
+  return decode_player_id(token)
+
+
+def _require_bearer_player_id():
+  """Returns (player_id, None) or (None, (json_response, status))."""
+  pid = _bearer_player_id()
+  if not pid:
+    return None, (jsonify({"error": "authorization required"}), 401)
+  return pid, None
 
 
 @app.route("/")
@@ -262,6 +283,101 @@ def health():
   )
 
 
+@app.post("/api/auth/register")
+def auth_register():
+  data = request.get_json(force=True, silent=True) or {}
+  name = (data.get("name") or "").strip()
+  last_name = (data.get("lastName") or data.get("last_name") or "").strip()
+  password = data.get("password") or ""
+
+  if not name:
+    return jsonify({"error": "name is required"}), 400
+  if not last_name:
+    return jsonify({"error": "lastName is required"}), 400
+  if len(password) < 8:
+    return jsonify({"error": "password must be at least 8 characters"}), 400
+
+  player_id = str(uuid.uuid4())
+  pw_hash = hash_password(password)
+
+  try:
+    with get_db() as conn:
+      with conn.cursor() as cur:
+        cur.execute(
+          """
+          SELECT player_id FROM players
+          WHERE lower(trim(name)) = lower(trim(%s))
+            AND lower(trim(last_name)) = lower(trim(%s))
+            AND password_hash IS NOT NULL
+          """,
+          (name, last_name),
+        )
+        if cur.fetchone():
+          return jsonify({"error": "an account with this name already exists; try logging in"}), 409
+
+        cur.execute(
+          """
+          INSERT INTO players (player_id, name, last_name, avatar, password_hash, created_at, updated_at)
+          VALUES (%s, %s, %s, 'scout', %s, NOW(), NOW())
+          RETURNING *
+          """,
+          (player_id, name, last_name, pw_hash),
+        )
+        row = cur.fetchone()
+  except IntegrityError:
+    return jsonify({"error": "an account with this name already exists; try logging in"}), 409
+
+  token = issue_token(player_id)
+  return jsonify({"token": token, "playerId": player_id, "player": _player_payload(row)})
+
+
+@app.post("/api/auth/login")
+def auth_login():
+  data = request.get_json(force=True, silent=True) or {}
+  name = (data.get("name") or "").strip()
+  last_name = (data.get("lastName") or data.get("last_name") or "").strip()
+  password = data.get("password") or ""
+
+  if not name or not last_name:
+    return jsonify({"error": "name and lastName are required"}), 400
+  if not password:
+    return jsonify({"error": "password is required"}), 400
+
+  with get_db() as conn:
+    with conn.cursor() as cur:
+      cur.execute(
+        """
+        SELECT * FROM players
+        WHERE lower(trim(name)) = lower(trim(%s))
+          AND lower(trim(last_name)) = lower(trim(%s))
+          AND password_hash IS NOT NULL
+        """,
+        (name, last_name),
+      )
+      row = cur.fetchone()
+
+  if not row or not verify_password_hash(row["password_hash"], password):
+    return jsonify({"error": "invalid name or password"}), 401
+
+  player_id = row["player_id"]
+  token = issue_token(player_id)
+  return jsonify({"token": token, "playerId": player_id, "player": _player_payload(row)})
+
+
+@app.get("/api/auth/me")
+def auth_me():
+  pid, err = _require_bearer_player_id()
+  if err:
+    return err
+  with get_db() as conn:
+    with conn.cursor() as cur:
+      try:
+        row = _get_player_or_404(cur, pid)
+      except LookupError:
+        return jsonify({"error": "player not found"}), 404
+  return jsonify({"player": _player_payload(row)})
+
+
 @app.get("/api/leaderboard")
 def get_leaderboard():
   limit = request.args.get("limit", default=10, type=int) or 10
@@ -270,9 +386,18 @@ def get_leaderboard():
     with conn.cursor() as cur:
       cur.execute(
         """
-        SELECT session_id, player_id, name, avatar, score, acc, date
-        FROM leaderboard
-        ORDER BY score DESC, acc DESC, created_at ASC
+        SELECT
+          s.session_id,
+          p.player_id,
+          (trim(p.name) || CASE WHEN trim(p.last_name) <> '' THEN ' ' || trim(p.last_name) ELSE '' END) AS name,
+          s.avatar AS avatar,
+          s.total_score AS score,
+          s.avg_accuracy AS acc,
+          to_char(COALESCE(s.ended_at, s.started_at), 'YYYY-MM-DD') AS date
+        FROM sessions s
+        JOIN players p ON p.player_id = s.player_id
+        WHERE s.status = 'finished'
+        ORDER BY s.total_score DESC, s.avg_accuracy DESC, s.started_at ASC
         LIMIT %s
         """,
         (limit,),
@@ -294,6 +419,9 @@ def get_player(player_id: str):
 
 @app.get("/api/session/<session_id>")
 def get_session(session_id: str):
+  token_pid, err = _require_bearer_player_id()
+  if err:
+    return err
   include_rounds = request.args.get("includeRounds", "").lower() in {"1", "true", "yes"}
   with get_db() as conn:
     with conn.cursor() as cur:
@@ -301,15 +429,17 @@ def get_session(session_id: str):
         session_row = _get_session_or_404(cur, session_id)
       except LookupError:
         return jsonify({"error": "session not found"}), 404
+      if session_row["player_id"] != token_pid:
+        return jsonify({"error": "forbidden"}), 403
 
       rounds: List[Dict[str, Any]] | None = None
       if include_rounds:
         cur.execute(
           """
-          SELECT round_number, scene_name, difficulty, weights, timing_ms, results, bot_used, logged_at
+          SELECT id, round_number, scene_name, difficulty, weights, timing_ms, results, bot_used, logged_at
           FROM rounds
           WHERE session_id = %s
-          ORDER BY round_number ASC
+          ORDER BY round_number ASC, logged_at ASC
           """,
           (session_id,),
         )
@@ -319,18 +449,23 @@ def get_session(session_id: str):
 
 @app.get("/api/session/<session_id>/rounds")
 def get_session_rounds(session_id: str):
+  token_pid, err = _require_bearer_player_id()
+  if err:
+    return err
   with get_db() as conn:
     with conn.cursor() as cur:
       try:
-        _get_session_or_404(cur, session_id)
+        sess = _get_session_or_404(cur, session_id)
       except LookupError:
         return jsonify({"error": "session not found"}), 404
+      if sess["player_id"] != token_pid:
+        return jsonify({"error": "forbidden"}), 403
       cur.execute(
         """
-        SELECT round_number, scene_name, difficulty, weights, timing_ms, results, bot_used, logged_at
+        SELECT id, round_number, scene_name, difficulty, weights, timing_ms, results, bot_used, logged_at
         FROM rounds
         WHERE session_id = %s
-        ORDER BY round_number ASC
+        ORDER BY round_number ASC, logged_at ASC
         """,
         (session_id,),
       )
@@ -340,12 +475,17 @@ def get_session_rounds(session_id: str):
 
 @app.get("/api/session/<session_id>/survey")
 def get_session_survey(session_id: str):
+  token_pid, err = _require_bearer_player_id()
+  if err:
+    return err
   with get_db() as conn:
     with conn.cursor() as cur:
       try:
-        _get_session_or_404(cur, session_id)
+        sess = _get_session_or_404(cur, session_id)
       except LookupError:
         return jsonify({"error": "session not found"}), 404
+      if sess["player_id"] != token_pid:
+        return jsonify({"error": "forbidden"}), 403
       cur.execute("SELECT * FROM surveys WHERE session_id = %s", (session_id,))
       row = cur.fetchone()
       if not row:
@@ -368,48 +508,26 @@ def get_session_survey(session_id: str):
 
 @app.post("/api/player")
 def create_player():
-  data = request.get_json(force=True, silent=True) or {}
-  name = (data.get("name") or "").strip()
-  last_name = (data.get("lastName") or data.get("last_name") or "").strip()
-  avatar = data.get("avatar") or "scout"
-
-  if not name:
-    return jsonify({"error": "name is required"}), 400
-  if not last_name:
-    return jsonify({"error": "lastName is required"}), 400
-  if avatar not in VALID_AVATARS:
-    return jsonify({"error": "invalid avatar"}), 400
-
-  player_id = (data.get("playerId") or str(uuid.uuid4())).strip()
-
-  with get_db() as conn:
-    with conn.cursor() as cur:
-      cur.execute(
-        """
-        INSERT INTO players (player_id, name, last_name, avatar, created_at, updated_at)
-        VALUES (%s, %s, %s, %s, NOW(), NOW())
-        ON CONFLICT (player_id) DO UPDATE
-        SET name = EXCLUDED.name,
-            last_name = EXCLUDED.last_name,
-            avatar = EXCLUDED.avatar,
-            updated_at = NOW()
-        RETURNING *
-        """,
-        (player_id, name, last_name, avatar),
-      )
-      row = cur.fetchone()
-
-  return jsonify({"playerId": player_id, "player": _player_payload(row)})
+  """Deprecated: use POST /api/auth/register and POST /api/auth/login."""
+  return jsonify(
+    {"error": "use POST /api/auth/register to create an account or POST /api/auth/login to sign in"}
+  ), 400
 
 
 @app.post("/api/session/start")
 def start_session():
+  token_pid, err = _require_bearer_player_id()
+  if err:
+    return err
+
   data = request.get_json(force=True, silent=True) or {}
   player_id = (data.get("playerId") or "").strip()
   avatar = data.get("avatar") or "scout"
 
   if not player_id:
     return jsonify({"error": "playerId is required"}), 400
+  if player_id != token_pid:
+    return jsonify({"error": "playerId does not match authorization"}), 403
   if avatar not in VALID_AVATARS:
     return jsonify({"error": "invalid avatar"}), 400
 
@@ -420,6 +538,12 @@ def start_session():
         _get_player_or_404(cur, player_id)
       except LookupError:
         return jsonify({"error": "player not found"}), 404
+      cur.execute(
+        """
+        UPDATE players SET avatar = %s, updated_at = NOW() WHERE player_id = %s
+        """,
+        (avatar, player_id),
+      )
       cur.execute(
         """
         INSERT INTO sessions (
@@ -438,6 +562,10 @@ def start_session():
 
 @app.post("/api/session/<session_id>/round")
 def log_round(session_id: str):
+  token_pid, err = _require_bearer_player_id()
+  if err:
+    return err
+
   data: Dict[str, Any] = request.get_json(force=True, silent=True) or {}
   try:
     round_number = int(data.get("roundNumber") or 0)
@@ -478,10 +606,13 @@ def log_round(session_id: str):
   with get_db() as conn:
     with conn.cursor() as cur:
       try:
-        _get_session_or_404(cur, session_id)
+        sess = _get_session_or_404(cur, session_id)
       except LookupError:
         return jsonify({"error": "session not found"}), 404
+      if sess["player_id"] != token_pid:
+        return jsonify({"error": "forbidden"}), 403
 
+      # Each completion (including replays of the same round) inserts a new row.
       cur.execute(
         """
         INSERT INTO rounds (
@@ -489,14 +620,6 @@ def log_round(session_id: str):
           weights, timing_ms, results, bot_used, logged_at
         )
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
-        ON CONFLICT (session_id, round_number) DO UPDATE
-        SET scene_name = EXCLUDED.scene_name,
-            difficulty = EXCLUDED.difficulty,
-            weights = EXCLUDED.weights,
-            timing_ms = EXCLUDED.timing_ms,
-            results = EXCLUDED.results,
-            bot_used = EXCLUDED.bot_used,
-            logged_at = NOW()
         """,
         (
           session_id,
@@ -523,6 +646,10 @@ def log_round(session_id: str):
 
 @app.post("/api/session/<session_id>/finish")
 def finish_session(session_id: str):
+  token_pid, err = _require_bearer_player_id()
+  if err:
+    return err
+
   data = request.get_json(force=True, silent=True) or {}
   total_score = int(data.get("totalScore") or 0)
   avg_accuracy = int(data.get("avgAccuracy") or 0)
@@ -530,9 +657,11 @@ def finish_session(session_id: str):
   with get_db() as conn:
     with conn.cursor() as cur:
       try:
-        _get_session_or_404(cur, session_id)
+        sess = _get_session_or_404(cur, session_id)
       except LookupError:
         return jsonify({"error": "session not found"}), 404
+      if sess["player_id"] != token_pid:
+        return jsonify({"error": "forbidden"}), 403
 
       cur.execute(
         """
@@ -550,7 +679,7 @@ def finish_session(session_id: str):
 
       cur.execute(
         """
-        SELECT p.player_id, p.name, p.last_name, s.avatar
+        SELECT p.player_id, p.name, p.last_name
         FROM sessions s
         JOIN players p ON p.player_id = s.player_id
         WHERE s.session_id = %s
@@ -559,40 +688,25 @@ def finish_session(session_id: str):
       )
       player_row = cur.fetchone()
 
-      leaderboard_date = _now_utc().date().isoformat()
-      display_name = _display_name_from_player_row(player_row)
-      cur.execute(
-        """
-        INSERT INTO leaderboard (
-          session_id, player_id, name, avatar, score, acc, date, created_at
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
-        ON CONFLICT (session_id) DO UPDATE
-        SET player_id = EXCLUDED.player_id,
-            name = EXCLUDED.name,
-            avatar = EXCLUDED.avatar,
-            score = EXCLUDED.score,
-            acc = EXCLUDED.acc,
-            date = EXCLUDED.date
-        RETURNING session_id, player_id, name, avatar, score, acc, date
-        """,
-        (
-          session_id,
-          player_row["player_id"],
-          display_name,
-          player_row["avatar"],
-          total_score,
-          avg_accuracy,
-          leaderboard_date,
-        ),
-      )
-      leaderboard_row = cur.fetchone()
+      leaderboard_row = {
+        "session_id": session_id,
+        "player_id": player_row["player_id"],
+        "name": _display_name_from_player_row(player_row),
+        "avatar": session_row["avatar"],
+        "score": total_score,
+        "acc": avg_accuracy,
+        "date": _now_utc().date().isoformat(),
+      }
 
   return jsonify({"status": "ok", "leaderboardEntry": _leaderboard_payload(leaderboard_row)})
 
 
 @app.post("/api/session/<session_id>/survey")
 def save_survey(session_id: str):
+  token_pid, err = _require_bearer_player_id()
+  if err:
+    return err
+
   data: Dict[str, Any] = request.get_json(force=True, silent=True) or {}
   raw_q6 = data.get("q6_confidence")
   if isinstance(raw_q6, (int, float)):
@@ -612,9 +726,11 @@ def save_survey(session_id: str):
   with get_db() as conn:
     with conn.cursor() as cur:
       try:
-        _get_session_or_404(cur, session_id)
+        sess = _get_session_or_404(cur, session_id)
       except LookupError:
         return jsonify({"error": "session not found"}), 404
+      if sess["player_id"] != token_pid:
+        return jsonify({"error": "forbidden"}), 403
 
       cur.execute(
         """
@@ -626,9 +742,10 @@ def save_survey(session_id: str):
           q4_ai_label_group,
           q5_weight_definition,
           q6_confidence,
+          q7_decision_confidence,
           submitted_at
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
         ON CONFLICT (session_id) DO UPDATE
         SET q1_graph_meaning = EXCLUDED.q1_graph_meaning,
             q2_weight_fairness = EXCLUDED.q2_weight_fairness,
@@ -636,6 +753,7 @@ def save_survey(session_id: str):
             q4_ai_label_group = EXCLUDED.q4_ai_label_group,
             q5_weight_definition = EXCLUDED.q5_weight_definition,
             q6_confidence = EXCLUDED.q6_confidence,
+            q7_decision_confidence = EXCLUDED.q7_decision_confidence,
             submitted_at = NOW()
         """,
         (
@@ -646,6 +764,7 @@ def save_survey(session_id: str):
           data.get("q4_ai_label_group") or "",
           data.get("q5_weight_definition") or "",
           q6_text,
+          q7_conf,
         ),
       )
 

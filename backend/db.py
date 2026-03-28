@@ -73,8 +73,7 @@ def _ensure_schema(conn) -> None:
           timing_ms INTEGER NOT NULL DEFAULT 0,
           results JSONB NOT NULL DEFAULT '{}'::jsonb,
           bot_used TEXT,
-          logged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          UNIQUE(session_id, round_number)
+          logged_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
         CREATE TABLE IF NOT EXISTS surveys (
@@ -87,17 +86,6 @@ def _ensure_schema(conn) -> None:
           q6_confidence TEXT NOT NULL DEFAULT '',
           q7_decision_confidence INTEGER NOT NULL DEFAULT 0,
           submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-
-        CREATE TABLE IF NOT EXISTS leaderboard (
-          session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
-          player_id TEXT REFERENCES players(player_id) ON DELETE SET NULL,
-          name TEXT NOT NULL,
-          avatar TEXT,
-          score INTEGER NOT NULL DEFAULT 0,
-          acc INTEGER NOT NULL DEFAULT 0,
-          date TEXT NOT NULL,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
         CREATE TABLE IF NOT EXISTS events (
@@ -114,7 +102,6 @@ def _ensure_schema(conn) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_rounds_session_id ON rounds(session_id);
         CREATE INDEX IF NOT EXISTS idx_events_session_id ON events(session_id);
-        CREATE INDEX IF NOT EXISTS idx_leaderboard_score ON leaderboard(score DESC, acc DESC);
         """
       )
       cur.execute(
@@ -140,10 +127,29 @@ def _ensure_schema(conn) -> None:
       cur.execute(
         "ALTER TABLE surveys ADD COLUMN IF NOT EXISTS q7_decision_confidence INTEGER NOT NULL DEFAULT 0"
       )
-      cur.execute("ALTER TABLE leaderboard DROP COLUMN IF EXISTS age")
       cur.execute("ALTER TABLE players DROP COLUMN IF EXISTS age")
       cur.execute(
         "ALTER TABLE players ADD COLUMN IF NOT EXISTS last_name TEXT NOT NULL DEFAULT ''"
+      )
+      cur.execute(
+        "ALTER TABLE players ADD COLUMN IF NOT EXISTS password_hash TEXT"
+      )
+      cur.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_players_login_unique
+        ON players (lower(trim(name)), lower(trim(last_name)))
+        WHERE password_hash IS NOT NULL
+        """
+      )
+      # Allow multiple rows per (session_id, round_number) so each replay is stored.
+      cur.execute(
+        "ALTER TABLE rounds DROP CONSTRAINT IF EXISTS rounds_session_id_round_number_key"
+      )
+      cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_rounds_session_round_time
+        ON rounds (session_id, round_number, logged_at)
+        """
       )
     conn.commit()
     _schema_ready = True
