@@ -1579,7 +1579,7 @@ const ZombieGame: React.FC = () => {
       return;
     }
     if (!lastName.trim()) {
-      setNameErr("Please enter your last name!");
+      setNameErr("Please enter your last name initial!");
       return;
     }
     setNameErr("");
@@ -1722,6 +1722,14 @@ const ZombieGame: React.FC = () => {
     } else {
       setScreen("survey_q5");
     }
+  };
+
+  const handleReplayRound = () => {
+    setRoundResult(null);
+    setSurveyError("");
+    setGameTimerMs(0);
+    roundGameStartRef.current = null;
+    setScreen("game");
   };
 
   const restart = () => {
@@ -1900,7 +1908,7 @@ const ZombieGame: React.FC = () => {
           <div
             style={{
               fontSize: 11,
-              color: "#444",
+              color: "#adadad",
               letterSpacing: 5,
               marginTop: 4
             }}
@@ -1910,8 +1918,8 @@ const ZombieGame: React.FC = () => {
         </div>
         <div
           style={{
-            background: "#111",
-            border: "1px solid #222",
+            background: "#1b1b1b",
+            border: "1px solid #555",
             borderRadius: 12,
             padding: "28px 30px",
             width: "100%",
@@ -1920,7 +1928,7 @@ const ZombieGame: React.FC = () => {
         >
           <div
             style={{
-              color: "#555",
+              color: "#d0d0d0",
               fontSize: 12,
               lineHeight: 1.8,
               marginBottom: 20
@@ -1945,8 +1953,8 @@ const ZombieGame: React.FC = () => {
                 width: 64,
                 height: 64,
                 borderRadius: "50%",
-                border: "2px solid #555",
-                background: "#111",
+                border: "2px solid #8a8a8a",
+                background: "#202020",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1991,7 +1999,7 @@ const ZombieGame: React.FC = () => {
                 ? "Engineer Bot"
                 : "Tap to choose your bot"}
             </div>
-            <div style={{ color: "#777", fontSize: 10 }}>
+            <div style={{ color: "#d0d0d0", fontSize: 10 }}>
               Avatar
             </div>
             {showAvatarPicker && (
@@ -2056,7 +2064,7 @@ const ZombieGame: React.FC = () => {
           <div style={{ marginBottom: 12 }}>
             <div
               style={{
-                color: "#555",
+                color: "#d5d5d5",
                 fontSize: 11,
                 letterSpacing: 1,
                 marginBottom: 6
@@ -2076,8 +2084,8 @@ const ZombieGame: React.FC = () => {
                 display: "block",
                 width: "100%",
                 padding: "10px 14px",
-                background: "#1a1a1a",
-                border: "1px solid #333",
+                background: "#101010",
+                border: "1px solid #666",
                 borderRadius: 8,
                 color: "#fff",
                 fontSize: 14,
@@ -2090,28 +2098,29 @@ const ZombieGame: React.FC = () => {
           <div style={{ marginBottom: 14 }}>
             <div
               style={{
-                color: "#555",
+                color: "#d5d5d5",
                 fontSize: 11,
                 letterSpacing: 1,
                 marginBottom: 6
               }}
             >
-              LAST NAME
+              LAST NAME INITIAL
             </div>
             <input
               value={lastName}
               onChange={(e) => {
-                setLastName(e.target.value);
+                setLastName(e.target.value.slice(0, 1));
                 setNameErr("");
               }}
               onKeyDown={(e) => e.key === "Enter" && handleStart()}
-              placeholder="e.g. Rivera"
+              placeholder="e.g. R"
+              maxLength={1}
               style={{
                 display: "block",
                 width: "100%",
                 padding: "10px 14px",
-                background: "#1a1a1a",
-                border: "1px solid #333",
+                background: "#101010",
+                border: "1px solid #666",
                 borderRadius: 8,
                 color: "#fff",
                 fontSize: 14,
@@ -2159,7 +2168,7 @@ const ZombieGame: React.FC = () => {
               marginTop: 14,
               background: "transparent",
               border: "1px solid #222",
-              color: "#555",
+              color: "#bcbcbc",
               padding: "8px 20px",
               borderRadius: 8,
               cursor: "pointer",
@@ -2383,7 +2392,7 @@ const ZombieGame: React.FC = () => {
           >
             ZOMBIE AI ACADEMY
           </div>
-          <div style={{ color: "#444", fontSize: 11 }}>
+          <div style={{ color: "#adadad", fontSize: 11 }}>
             Round {round + 1}/3 — {rd.name}
           </div>
         </div>
@@ -2401,7 +2410,7 @@ const ZombieGame: React.FC = () => {
           <div
             style={{
               fontSize: 11,
-              color: "#333",
+              color: "#9a9a9a",
               letterSpacing: 3
             }}
           >
@@ -2552,7 +2561,7 @@ const ZombieGame: React.FC = () => {
               <div key={String(i)} style={{ width: 8, height: 8, borderRadius: "50%", background: i < step ? "#ff9900" : i === step - 1 ? "#ff9900" : "#333" }} />
             ))}
           </div>
-          <div style={{ color: "#444", fontSize: 11 }}>Q{step}/{total}</div>
+          <div style={{ color: "#adadad", fontSize: 11 }}>Q{step}/{total}</div>
         </div>
         <div style={{ background: "#111", border: "1px solid #222", borderRadius: 12, padding: "24px 28px" }}>
           {children}
@@ -2693,7 +2702,7 @@ const ZombieGame: React.FC = () => {
           Question: If you want the robot to become an expert at spotting those 5 pandas, which of these
           &ldquo;tricks&rdquo; would help the most?
         </div>
-        <div style={{ color: "#888", fontSize: 12, marginBottom: 10 }}>Select all that apply.</div>
+        <div style={{ color: "#d8d8d8", fontSize: 12, marginBottom: 10 }}>Select all that apply.</div>
         {SURVEY_Q2_OPTIONS.map((o) => mcCheckboxOption(o.id, o.label))}
         {surveyErrorMsg}
         {continueBtn(continueQ2)}
@@ -2848,11 +2857,11 @@ const ZombieGame: React.FC = () => {
         <div style={{ color: "#ffdd77", fontSize: 15, fontWeight: "bold", marginBottom: 12 }}>
           How confident are you in understanding how AI makes decisions?
         </div>
-        <div style={{ color: "#888", fontSize: 12, marginBottom: 16 }}>
+        <div style={{ color: "#d8d8d8", fontSize: 12, marginBottom: 16 }}>
           Scale: 1 = not confident at all &mdash; 10 = very confident. There is no wrong answer.
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-          <span style={{ fontSize: 12, color: "#777" }}>1</span>
+          <span style={{ fontSize: 12, color: "#d0d0d0" }}>1</span>
           <input
             type="range"
             min={1}
@@ -2864,7 +2873,7 @@ const ZombieGame: React.FC = () => {
             }}
             style={{ flex: 1, accentColor: "#ff9900" }}
           />
-          <span style={{ fontSize: 12, color: "#777" }}>10</span>
+          <span style={{ fontSize: 12, color: "#d0d0d0" }}>10</span>
         </div>
         <div style={{ fontSize: 16, color: "#ffcc66", fontWeight: "bold", marginBottom: 20 }}>
           Your answer: {ansQ7} / 10
@@ -2960,7 +2969,7 @@ const ZombieGame: React.FC = () => {
                 >
                   <div
                     style={{
-                      color: "#888",
+                      color: "#d8d8d8",
                       fontSize: 11,
                       marginBottom: 4
                     }}
@@ -2993,7 +3002,7 @@ const ZombieGame: React.FC = () => {
 
               <div
                 style={{
-                  color: "#666",
+                  color: "#c6c6c6",
                   fontSize: 10,
                   letterSpacing: 2,
                   marginBottom: 6
@@ -3004,7 +3013,7 @@ const ZombieGame: React.FC = () => {
               {leaderboard.length === 0 ? (
                 <div
                   style={{
-                    color: "#444",
+                    color: "#adadad",
                     fontSize: 12,
                     textAlign: "center",
                     padding: 16
@@ -3038,7 +3047,7 @@ const ZombieGame: React.FC = () => {
                           width: 26,
                           textAlign: "center",
                           fontSize: 14,
-                          color: "#777"
+                          color: "#d0d0d0"
                         }}
                       >
                         {medal}
@@ -3055,7 +3064,7 @@ const ZombieGame: React.FC = () => {
                         </div>
                         <div
                           style={{
-                            color: "#666",
+                            color: "#c6c6c6",
                             fontSize: 10
                           }}
                         >
@@ -3104,7 +3113,7 @@ const ZombieGame: React.FC = () => {
           <div style={{ fontSize: 20, color: "#fff", fontWeight: "bold" }}>
             Round {round + 1} Complete!
           </div>
-          <div style={{ color: "#444", fontSize: 11, marginTop: 4 }}>
+          <div style={{ color: "#adadad", fontSize: 11, marginTop: 4 }}>
             {ROUNDS_DATA[round].name}
           </div>
         </div>
@@ -3154,7 +3163,7 @@ const ZombieGame: React.FC = () => {
                 <div
                   style={{
                     fontSize: 10,
-                    color: "#444",
+                    color: "#adadad",
                     marginTop: 3
                   }}
                 >
@@ -3179,7 +3188,7 @@ const ZombieGame: React.FC = () => {
                 marginBottom: 5
               }}
             >
-              <span style={{ color: "#555", fontSize: 12 }}>Accuracy</span>
+              <span style={{ color: "#bcbcbc", fontSize: 12 }}>Accuracy</span>
               <span style={{ color: accCol, fontWeight: "bold" }}>
                 {roundResult.acc}%
               </span>
@@ -3209,7 +3218,7 @@ const ZombieGame: React.FC = () => {
               alignItems: "center"
             }}
           >
-            <span style={{ color: "#555", fontSize: 13 }}>Round score</span>
+            <span style={{ color: "#bcbcbc", fontSize: 13 }}>Round score</span>
             <span
               style={{
                 color: "#ff9900",
@@ -3252,25 +3261,42 @@ const ZombieGame: React.FC = () => {
             {lesson}
           </div>
         </div>
-        <button
-          onClick={handleNextRound}
-          style={{
-            padding: "12px 40px",
-            background: "#cc2200",
-            color: "#fff",
-            border: "none",
-            borderRadius: 8,
-            fontSize: 14,
-            fontWeight: "bold",
-            cursor: "pointer",
-            fontFamily: "'Courier New',monospace",
-            letterSpacing: 1
-          }}
-        >
-          {round < 2
-            ? `Next: ${ROUNDS_DATA[round + 1].name} →`
-            : "See Leaderboard 🏆"}
-        </button>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
+          <button
+            onClick={handleReplayRound}
+            style={{
+              padding: "12px 28px",
+              background: "#1a1a1a",
+              color: "#ffdd77",
+              border: "1px solid #665200",
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: "bold",
+              cursor: "pointer",
+              fontFamily: "'Courier New',monospace",
+              letterSpacing: 1
+            }}
+          >
+            Replay ↺
+          </button>
+          <button
+            onClick={handleNextRound}
+            style={{
+              padding: "12px 30px",
+              background: "#cc2200",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: "bold",
+              cursor: "pointer",
+              fontFamily: "'Courier New',monospace",
+              letterSpacing: 1
+            }}
+          >
+            Continue →
+          </button>
+        </div>
       </div>
     );
   }
@@ -3311,7 +3337,7 @@ const ZombieGame: React.FC = () => {
           </div>
           <div
             style={{
-              color: "#333",
+              color: "#9a9a9a",
               fontSize: 10,
               marginTop: 3,
               letterSpacing: 3
@@ -3393,7 +3419,7 @@ const ZombieGame: React.FC = () => {
                     <div
                       style={{
                         fontSize: 9,
-                        color: "#333",
+                        color: "#9a9a9a",
                         marginTop: 3
                       }}
                     >
@@ -3422,7 +3448,7 @@ const ZombieGame: React.FC = () => {
                     <div style={{ color: "#bbb", fontSize: 12 }}>
                       {ROUNDS_DATA[i].name}
                     </div>
-                    <div style={{ color: "#444", fontSize: 10 }}>
+                    <div style={{ color: "#adadad", fontSize: 10 }}>
                       Accuracy: {r.acc}%
                     </div>
                   </div>
@@ -3441,7 +3467,7 @@ const ZombieGame: React.FC = () => {
           )}
           <div
             style={{
-              color: "#333",
+              color: "#9a9a9a",
               fontSize: 10,
               letterSpacing: 2,
               marginBottom: 9
@@ -3486,7 +3512,7 @@ const ZombieGame: React.FC = () => {
                       width: 26,
                       textAlign: "center",
                       fontSize: i < 3 ? 15 : 12,
-                      color: "#555",
+                      color: "#bcbcbc",
                       fontWeight: "bold"
                     }}
                   >
@@ -3505,7 +3531,7 @@ const ZombieGame: React.FC = () => {
                     </div>
                     <div
                       style={{
-                        color: "#333",
+                        color: "#9a9a9a",
                         fontSize: 10
                       }}
                     >
